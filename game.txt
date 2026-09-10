@@ -1,0 +1,795 @@
+/**
+ * Office Affair — Phase 1 Prototype
+ * Vanilla JS modular architecture (stubs + minimal runnable flow)
+ */
+
+/* =============================================================================
+ * GAME CONFIG
+ * ============================================================================= */
+
+const GAME_CONFIG = {
+  gameDuration: 60,
+  goodEndMinScore: 50,
+
+  bossStates: {
+    IDLE: 'IDLE',
+    PREPARE: 'PREPARE',
+    LOOKING: 'LOOKING',
+    CAUGHT: 'CAUGHT',
+  },
+
+  coupleStates: {
+    ARGUING: 'ARGUING',
+    KISSING: 'KISSING',
+  },
+
+  // Placeholder timing ranges (ms) — to be wired in Phase 2
+  bossTiming: {
+    idleMin: 2000,
+    idleMax: 4000,
+    prepareMin: 800,
+    prepareMax: 1200,
+    lookingMin: 1500,
+    lookingMax: 2500,
+  },
+
+  kissCycleDuration: 1000,
+
+  speedTiers: [
+    { minScore: 0, maxScore: 30, multiplier: 2.0 },
+    { minScore: 31, maxScore: 70, multiplier: 3 },
+    { minScore: 71, maxScore: 120, multiplier: 4 },
+    { minScore: 121, maxScore: 180, multiplier: 6 },
+    { minScore: 181, maxScore: Infinity, multiplier: 9 },
+  ],
+
+  leaderboardKey: 'officeAffairLeaderboard',
+  leaderboardMaxEntries: 10,
+
+  // Character art — one asset set per group (A solo, BC shared, DE shared)
+  characterAssets: {
+    A: {
+      frames: ['Pics/A01.webp', 'Pics/A02.webp', 'Pics/A03.webp'],
+      frameDurationMs: 700,
+    },
+    BC: {
+      frames: [], // B & C share the same image files — add when art is ready
+      frameDurationMs: 1200,
+    },
+    DE: {
+      arguingFrames: [
+        'Pics/DE_argue_01.webp',
+        'Pics/DE_argue_02.webp',
+      ],
+      kissingFrames: [
+        'Pics/DE_kiss_01.webp',
+        'Pics/DE_kiss_02.webp',
+      ],
+    },
+  },
+};
+
+/* =============================================================================
+ * SPEED TIER (standalone function — ready for Kiss System)
+ * ============================================================================= */
+
+function getKissSpeedMultiplier(score) {
+  const tier = GAME_CONFIG.speedTiers.find(
+    (t) => score >= t.minScore && score <= t.maxScore
+  );
+  return tier ? tier.multiplier : 1.0;
+}
+
+/* =============================================================================
+ * ENDING SYSTEM (standalone function — ready for game-over flow)
+ * ============================================================================= */
+
+function determineEnding(wasCaught, score) {
+  if (wasCaught) return 'BAD END';
+  if (score >= GAME_CONFIG.goodEndMinScore) return 'GOOD END';
+  return 'NORMAL END';
+}
+
+/* =============================================================================
+ * SCORE SYSTEM
+ * ============================================================================= */
+
+class ScoreSystem {
+  constructor() {
+    this.score = 0;
+  }
+
+  reset() {
+    this.score = 0;
+  }
+
+  addKiss() {
+    this.score += 1;
+    return this.score;
+  }
+
+  getScore() {
+    return this.score;
+  }
+}
+
+/* =============================================================================
+ * TIMER SYSTEM
+ * ============================================================================= */
+
+class TimerSystem {
+  constructor(durationSec, onTick, onComplete) {
+    this.durationSec = durationSec;
+    this.remainingSec = durationSec;
+    this.onTick = onTick;
+    this.onComplete = onComplete;
+    this._intervalId = null;
+  }
+
+  start() {
+    this.stop();
+    this.remainingSec = this.durationSec;
+    this._intervalId = setInterval(() => {
+      this.remainingSec -= 1;
+      this.onTick(this.remainingSec);
+      if (this.remainingSec <= 0) {
+        this.stop();
+        this.onComplete();
+      }
+    }, 1000);
+  }
+
+  stop() {
+    if (this._intervalId) {
+      clearInterval(this._intervalId);
+      this._intervalId = null;
+    }
+  }
+
+  getRemaining() {
+    return this.remainingSec;
+  }
+}
+
+/* =============================================================================
+ * BOSS STATE MACHINE (stub — visual indicator only in Phase 1)
+ * ============================================================================= */
+
+class BossStateMachine {
+  constructor(onStateChange) {
+    this.state = GAME_CONFIG.bossStates.IDLE;
+    this.onStateChange = onStateChange;
+  }
+
+  reset() {
+    this.setState(GAME_CONFIG.bossStates.IDLE);
+  }
+
+  setState(nextState) {
+    this.state = nextState;
+    if (this.onStateChange) this.onStateChange(nextState);
+  }
+
+  getState() {
+    return this.state;
+  }
+
+  /** @todo Phase 2: implement IDLE → PREPARE → LOOKING → IDLE cycle with random timing */
+  start() {
+    this.reset();
+  }
+
+  stop() {
+    // no-op in prototype
+  }
+
+  /** @todo Phase 2: check LOOKING + KISSING → CAUGHT */
+  checkCaught(isKissing) {
+    return false;
+  }
+}
+
+/* =============================================================================
+ * CHARACTER ANIMATION MANAGER (placeholder visuals)
+ * ============================================================================= */
+
+class CharacterAnimationManager {
+  constructor() {
+    this.elements = {
+      A: document.getElementById('character-a'),
+      B: document.getElementById('character-b'),
+      C: document.getElementById('character-c'),
+      D: document.getElementById('character-d'),
+      E: document.getElementById('character-e'),
+    };
+
+    // Art asset groups — swap sprites on these containers when art is ready
+    this.groups = {
+      A: document.getElementById('character-group-a'),
+      BC: document.getElementById('character-group-bc'),
+      DE: document.getElementById('character-group-de'),
+    };
+
+    // Conversation sets — extensible structure for Phase 2+
+    this.conversationSets = [
+      { id: 1, sequence: ['B1', 'C1', 'B2', 'C2'] },
+      { id: 2, sequence: ['B3', 'C3', 'B4', 'C4'] },
+      { id: 3, sequence: ['B5', 'C5', 'B6', 'C6'] },
+    ];
+
+    this.aFrames = GAME_CONFIG.characterAssets.A.frames;
+
+    this.deArguingFrames = GAME_CONFIG.characterAssets.DE.arguingFrames;
+    this.deKissingFrames = GAME_CONFIG.characterAssets.DE.kissingFrames;
+
+    this._aIndex = 0;
+    this._convSetIndex = 0;
+    this._convStepIndex = 0;
+    this._deIndex = 0;
+
+    this._aIntervalId = null;
+    this._bcIntervalId = null;
+    this._deIntervalId = null;
+  }
+
+    advanceKissFrame() {
+    const frames = this.deKissingFrames;
+
+    if (!frames.length) return;
+
+    this._deIndex =
+      (this._deIndex + 1) % frames.length;
+
+    this._applyDEFrame(frames);
+  }
+
+  start() {
+    this.stop();
+
+    this._aIndex = 0;
+    this._convSetIndex = 0;
+    this._convStepIndex = 0;
+    this._deIndex = 0;
+
+    this._startAAnimation();
+    this._startBCAnimation();
+
+    this.setCoupleState(GAME_CONFIG.coupleStates.ARGUING);
+  }
+
+  stop() {
+    if (this._aIntervalId) {
+      clearInterval(this._aIntervalId);
+      this._aIntervalId = null;
+    }
+
+    if (this._bcIntervalId) {
+      clearInterval(this._bcIntervalId);
+      this._bcIntervalId = null;
+    }
+
+    if (this._deIntervalId) {
+      clearInterval(this._deIntervalId);
+      this._deIntervalId = null;
+    }
+  }             
+
+  _startAAnimation() {
+    if (!this.aFrames.length) return;
+
+    this._applyAFrame();
+    const duration = GAME_CONFIG.characterAssets.A.frameDurationMs;
+    this._aIntervalId = setInterval(() => {
+      this._aIndex = (this._aIndex + 1) % this.aFrames.length;
+      this._applyAFrame();
+    }, duration);
+  }
+
+  _startBCAnimation() {
+    this._applyConversationStep();
+
+    const duration = GAME_CONFIG.characterAssets.BC.frameDurationMs;
+    this._bcIntervalId = setInterval(() => {
+      this._convStepIndex += 1;
+      const currentSet = this.conversationSets[this._convSetIndex];
+      if (this._convStepIndex >= currentSet.sequence.length) {
+        this._convStepIndex = 0;
+        this._convSetIndex = (this._convSetIndex + 1) % this.conversationSets.length;
+      }
+      this._applyConversationStep();
+    }, duration);
+  }
+
+  setCoupleState(state) {
+    const isKissing =
+      state === GAME_CONFIG.coupleStates.KISSING;
+
+    ['D', 'E'].forEach((id) => {
+      const el = this.elements[id];
+      if (!el) return;
+
+      el.classList.toggle('is-kissing', isKissing);
+    });
+
+    // 每次切換狀態時重新開始 DE 圖片循環
+    this._startDEAnimation(isKissing);
+  }
+
+  _startDEAnimation(isKissing) {
+    if (this._deIntervalId) {
+      clearInterval(this._deIntervalId);
+      this._deIntervalId = null;
+    }
+
+    this._deIndex = 0;
+
+    const frames = isKissing
+      ? this.deKissingFrames
+      : this.deArguingFrames;
+
+    if (!frames.length) return;
+
+    this._applyDEFrame(frames);
+
+    // Kiss 圖片切換速度由 KissSystem 的 cycle 控制。
+    // 因此 KISS 狀態下不在這裡使用固定 interval。
+    if (isKissing) return;
+
+    // ARGUING 狀態使用固定速度輪播。
+    const duration = 1000;
+
+    this._deIntervalId = setInterval(() => {
+      if (this._deIndex >= frames.length - 1) {
+        this._deIndex = 0;
+      } else {
+        this._deIndex += 1;
+      }
+
+      this._applyDEFrame(frames);
+    }, duration);
+  }
+
+  _applyDEFrame(frames) {
+  ['D', 'E'].forEach((id) => {
+    const el = this.elements[id];
+    if (!el) return;
+
+    const sprite = el.querySelector('.character__sprite');
+    if (!sprite) return;
+
+    const frame = frames[this._deIndex];
+
+    sprite.className = 'character__sprite character__sprite--image';
+    sprite.src = frame;
+  });
+}
+
+  _applyAFrame() {
+    const sprite = document.getElementById('character-a-sprite');
+    if (sprite && this.aFrames[this._aIndex]) {
+      sprite.src = this.aFrames[this._aIndex];
+    }
+  }
+
+  _applyConversationStep() {
+    const set = this.conversationSets[this._convSetIndex];
+    const step = set.sequence[this._convStepIndex];
+    const charId = step[0];
+    const el = this.elements[charId];
+    if (!el) return;
+    const sprite = el.querySelector('.character__sprite');
+    if (sprite) {
+      sprite.className = 'character__sprite character__sprite--' + step.toLowerCase();
+    }
+  }
+}
+
+/* =============================================================================
+ * KISS SYSTEM
+ * ============================================================================= */
+
+class KissSystem {
+  constructor(scoreSystem, characterAnim, onScoreChange) {
+    this.scoreSystem = scoreSystem;
+    this.characterAnim = characterAnim;
+    this.onScoreChange = onScoreChange;
+
+    this.isKissing = false;
+    this._cycleTimeoutId = null;
+  }
+
+  /**
+   * Start the Kiss Cycle.
+   *
+   * 玩家按住 KISS 後：
+   * ARGUING → KISSING
+   *
+   * 每完成一個完整 Kiss Cycle：
+   * score + 1
+   *
+   * Cycle 完成後會自動開始下一個 Cycle。
+   */
+  startKissing() {
+    if (this.isKissing) return;
+
+    this.isKissing = true;
+
+    this.characterAnim.setCoupleState(
+      GAME_CONFIG.coupleStates.KISSING
+    );
+
+    this._scheduleNextCycle();
+  }
+
+  /**
+   * Schedule one Kiss Cycle.
+   *
+   * 實際 cycle 時間：
+   *
+   * kissCycleDuration / speedMultiplier
+   *
+   * 例如：
+   * 1000ms / 1.0  = 1000ms
+   * 1000ms / 1.25 = 800ms
+   * 1000ms / 1.5  = 666.67ms
+   * 1000ms / 1.75 = 571.43ms
+   * 1000ms / 2.0  = 500ms
+   */
+  _scheduleNextCycle() {
+    if (!this.isKissing) return;
+
+    const currentScore = this.scoreSystem.getScore();
+
+    const speedMultiplier =
+      getKissSpeedMultiplier(currentScore);
+
+    const cycleDuration =
+      GAME_CONFIG.kissCycleDuration / speedMultiplier;
+
+    this._cycleTimeoutId = setTimeout(() => {
+      this._cycleTimeoutId = null;
+
+      // 玩家已經放開 KISS，不計算這個 cycle。
+      if (!this.isKissing) return;
+
+      // 一個完整 Kiss Cycle = 1 分
+      const newScore = this.scoreSystem.addKiss();
+
+      // 通知 GameManager / UI 更新 HUD
+      if (this.onScoreChange) {
+        this.onScoreChange(newScore);
+      }
+
+      // 完成一個 Kiss Cycle 後切換到下一張 Kiss 圖片
+      this.characterAnim.advanceKissFrame();
+
+      // 下一個 Cycle 重新計算速度。
+      //
+      // 這樣當 score 跨過 speed tier 時，
+      // 下一個 cycle 就會立即使用新的速度。
+      this._scheduleNextCycle();
+
+    }, cycleDuration);
+  }
+
+  /**
+   * Stop Kiss Cycle immediately.
+   *
+   * 玩家放開 KISS：
+   * KISSING → ARGUING
+   *
+   * 尚未完成的 cycle 不會計分。
+   */
+  stopKissing() {
+    if (!this.isKissing) return;
+
+    this.isKissing = false;
+
+    if (this._cycleTimeoutId) {
+      clearTimeout(this._cycleTimeoutId);
+      this._cycleTimeoutId = null;
+    }
+
+    this.characterAnim.setCoupleState(
+      GAME_CONFIG.coupleStates.ARGUING
+    );
+  }
+
+  reset() {
+    this.stopKissing();
+  }
+
+  getIsKissing() {
+    return this.isKissing;
+  }
+}
+
+/* =============================================================================
+ * LEADERBOARD SYSTEM (stub — UI wired, persistence in Phase 2)
+ * ============================================================================= */
+
+class LeaderboardSystem {
+  constructor() {
+    this.listEl = document.getElementById('leaderboard-list');
+    this.modal = document.getElementById('leaderboard-modal');
+  }
+
+  /** @todo Phase 2: load from localStorage, sort by score desc, top 10 */
+  load() {
+    return [];
+  }
+
+  /** @todo Phase 2: save entry { playerName, score, ending, date } */
+  saveEntry(entry) {
+    console.log('[Leaderboard] saveEntry (stub):', entry);
+  }
+
+  render(entries) {
+    if (!this.listEl) return;
+    if (!entries.length) {
+      this.listEl.innerHTML = '<li class="leaderboard-list__empty">尚無紀錄</li>';
+      return;
+    }
+    this.listEl.innerHTML = entries
+      .map(
+        (e, i) => `
+        <li>
+          <span class="leaderboard-list__rank">${i + 1}</span>
+          <span class="leaderboard-list__name">${escapeHtml(e.playerName)}</span>
+          <span class="leaderboard-list__score">${e.score}</span>
+          <span class="leaderboard-list__ending">${escapeHtml(e.ending)}</span>
+        </li>`
+      )
+      .join('');
+  }
+
+  open() {
+    this.render(this.load());
+    this.modal?.showModal();
+  }
+
+  close() {
+    this.modal?.close();
+  }
+
+  /** @todo Phase 2: confirm dialog + localStorage.removeItem */
+  clear() {
+    if (confirm('確定要清除排行榜嗎？此操作無法復原。')) {
+      console.log('[Leaderboard] cleared (stub)');
+      this.render([]);
+    }
+  }
+}
+
+/* =============================================================================
+ * UI MANAGER
+ * ============================================================================= */
+
+class UIManager {
+  constructor() {
+    this.screens = {
+      start: document.getElementById('start-screen'),
+      game: document.getElementById('game-screen'),
+      end: document.getElementById('end-screen'),
+    };
+    this.hud = {
+      playerName: document.getElementById('hud-player-name'),
+      score: document.getElementById('hud-score'),
+      timer: document.getElementById('hud-timer'),
+    };
+    this.bossWarning = document.getElementById('boss-warning');
+    this.bossWarningText = document.getElementById('boss-warning-text');
+    this.kissBtn = document.getElementById('kiss-btn');
+    this.playerNameInput = document.getElementById('player-name-input');
+  }
+
+  showScreen(name) {
+    Object.values(this.screens).forEach((el) => el?.classList.remove('screen--active'));
+    this.screens[name]?.classList.add('screen--active');
+  }
+
+  updateHUD({ playerName, score, timer }) {
+    if (playerName !== undefined) this.hud.playerName.textContent = playerName;
+    if (score !== undefined) this.hud.score.textContent = score;
+    if (timer !== undefined) this.hud.timer.textContent = timer;
+  }
+
+  updateBossWarning(state) {
+    if (!this.bossWarning) return;
+    const labels = {
+      IDLE: 'Boss Idle',
+      PREPARE: '⚠ Boss Preparing!',
+      LOOKING: '👀 Boss Looking!',
+      CAUGHT: 'Caught!',
+    };
+    this.bossWarning.className = 'boss-warning boss-warning--' + state.toLowerCase();
+    if (this.bossWarningText) {
+      this.bossWarningText.textContent = labels[state] || state;
+    }
+  }
+
+  setKissButtonEnabled(enabled) {
+    if (this.kissBtn) this.kissBtn.disabled = !enabled;
+  }
+
+  setKissButtonActive(active) {
+    this.kissBtn?.classList.toggle('is-active', active);
+  }
+
+  showEndScreen({ playerName, score, ending }) {
+    document.getElementById('end-title').textContent = ending;
+    document.getElementById('end-message').textContent = getEndingMessage(ending);
+    document.getElementById('end-player-name').textContent = playerName;
+    document.getElementById('end-score').textContent = score;
+    this.showScreen('end');
+  }
+
+  getPlayerNameInput() {
+    const name = this.playerNameInput?.value.trim();
+    return name || 'Anonymous';
+  }
+}
+
+function getEndingMessage(ending) {
+  const messages = {
+    'BAD END': '被老闆發現了！下次小心一點。',
+    'NORMAL END': '安全過關，但親吻次數還不夠多。',
+    'GOOD END': '完美過關！你是辦公室情場高手！',
+  };
+  return messages[ending] || '';
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+/* =============================================================================
+ * GAME MANAGER
+ * ============================================================================= */
+
+class GameManager {
+  constructor() {
+    this.ui = new UIManager();
+    this.scoreSystem = new ScoreSystem();
+    this.characterAnim = new CharacterAnimationManager();
+    this.kissSystem = new KissSystem(
+      this.scoreSystem,
+      this.characterAnim,
+      (score) => {
+        this.ui.updateHUD({ score });
+      }
+    );
+    this.leaderboard = new LeaderboardSystem();
+
+    this.bossStateMachine = new BossStateMachine((state) => {
+      this.ui.updateBossWarning(state);
+    });
+
+    this.timerSystem = null;
+    this.playerName = '';
+    this.gamePhase = 'menu'; // menu | playing | ended
+    this.wasCaught = false;
+
+    this._bindEvents();
+    this.ui.showScreen('start');
+    this.ui.updateBossWarning(GAME_CONFIG.bossStates.IDLE);
+  }
+
+  _bindEvents() {
+    document.getElementById('start-btn')?.addEventListener('click', () => this.startGame());
+    document.getElementById('restart-btn')?.addEventListener('click', () => this.returnToMenu());
+    document.getElementById('view-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.open());
+    document.getElementById('end-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.open());
+    document.getElementById('close-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.close());
+    document.getElementById('clear-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.clear());
+
+    const kissBtn = this.ui.kissBtn;
+    if (kissBtn) {
+      kissBtn.addEventListener('mousedown', () => this._onKissStart());
+      kissBtn.addEventListener('mouseup', () => this._onKissStop());
+      kissBtn.addEventListener('mouseleave', () => this._onKissStop());
+      kissBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this._onKissStart(); });
+      kissBtn.addEventListener('touchend', (e) => { e.preventDefault(); this._onKissStop(); });
+    }
+
+    this.ui.playerNameInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this.startGame();
+    });
+  }
+
+  startGame() {
+    this.playerName = this.ui.getPlayerNameInput();
+    this.gamePhase = 'playing';
+    this.wasCaught = false;
+
+    this.scoreSystem.reset();
+    this.kissSystem.reset();
+    this.bossStateMachine.reset();
+    this.bossStateMachine.start();
+    this.characterAnim.start();
+
+    this.ui.showScreen('game');
+    this.ui.updateHUD({
+      playerName: this.playerName,
+      score: 0,
+      timer: GAME_CONFIG.gameDuration,
+    });
+    this.ui.setKissButtonEnabled(true);
+
+    this.timerSystem = new TimerSystem(
+      GAME_CONFIG.gameDuration,
+      (remaining) => this.ui.updateHUD({ timer: remaining }),
+      () => this._onTimeUp()
+    );
+    this.timerSystem.start();
+  }
+
+  _onKissStart() {
+    if (this.gamePhase !== 'playing') return;
+    this.kissSystem.startKissing();
+    this.ui.setKissButtonActive(true);
+  }
+
+  _onKissStop() {
+    this.kissSystem.stopKissing();
+    this.ui.setKissButtonActive(false);
+  }
+
+  _onTimeUp() {
+    this._endGame(false);
+  }
+
+  /** @todo Phase 2: call when boss catches player */
+  _onCaught() {
+    this._endGame(true);
+  }
+
+  _endGame(caught) {
+    if (this.gamePhase === 'ended') return;
+    this.gamePhase = 'ended';
+    this.wasCaught = caught;
+
+    this.timerSystem?.stop();
+    this.bossStateMachine.stop();
+    this.characterAnim.stop();
+    this.kissSystem.stopKissing();
+    this.ui.setKissButtonEnabled(false);
+    this.ui.setKissButtonActive(false);
+
+    const score = this.scoreSystem.getScore();
+    const ending = determineEnding(caught, score);
+
+    this.leaderboard.saveEntry({
+      playerName: this.playerName,
+      score,
+      ending,
+      date: new Date().toISOString(),
+    });
+
+    this.ui.showEndScreen({ playerName: this.playerName, score, ending });
+  }
+
+  returnToMenu() {
+    this.gamePhase = 'menu';
+    this.timerSystem?.stop();
+    this.bossStateMachine.stop();
+    this.characterAnim.stop();
+    this.kissSystem.reset();
+    this.ui.setKissButtonEnabled(false);
+    this.ui.showScreen('start');
+    this.ui.updateBossWarning(GAME_CONFIG.bossStates.IDLE);
+  }
+}
+
+/* =============================================================================
+ * BOOT
+ * ============================================================================= */
+
+document.addEventListener('DOMContentLoaded', () => {
+  window.gameManager = new GameManager();
+  console.log('[Office Affair] Phase 1 prototype loaded.');
+  console.log('[Office Affair] Kiss speed at score 0:', getKissSpeedMultiplier(0));
+  console.log('[Office Affair] Kiss speed at score 20:', getKissSpeedMultiplier(20));
+});

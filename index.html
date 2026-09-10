@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Office Affair</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Start Screen -->
+    <section id="start-screen" class="screen screen--active">
+      <div class="panel panel--start">
+        <h1 class="title">Office Affair</h1>
+        <p class="subtitle">在辦公室偷偷親吻，別被老闆發現！</p>
+        <label class="input-label" for="player-name-input">玩家名稱</label>
+        <input
+          id="player-name-input"
+          class="input"
+          type="text"
+          maxlength="20"
+          placeholder="輸入你的名字"
+          autocomplete="off"
+        >
+        <div class="button-row">
+          <button id="start-btn" class="btn btn--primary">開始遊戲</button>
+          <button id="view-leaderboard-btn" class="btn btn--secondary">View Leaderboard</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Game Screen -->
+    <section id="game-screen" class="screen">
+      <header class="hud">
+        <div class="hud__item">
+          <span class="hud__label">Player</span>
+          <span id="hud-player-name" class="hud__value">—</span>
+        </div>
+        <div class="hud__item">
+          <span class="hud__label">Kiss Count</span>
+          <span id="hud-score" class="hud__value">0</span>
+        </div>
+        <div class="hud__item">
+          <span class="hud__label">Time</span>
+          <span id="hud-timer" class="hud__value">60</span>
+        </div>
+        <div id="boss-warning" class="boss-warning" aria-live="polite">
+          <span class="boss-warning__icon">!</span>
+          <span id="boss-warning-text" class="boss-warning__text">Boss Idle</span>
+        </div>
+      </header>
+
+      <main id="office-scene" class="office-scene">
+        <div class="office-scene__desks" aria-hidden="true">
+          <div class="office-scene__desk-row">
+            <div class="office-scene__desk office-scene__desk--group-a"></div>
+            <div class="office-scene__desk office-scene__desk--group-bc"></div>
+            <div class="office-scene__desk-row__spacer"></div>
+            <div class="office-scene__desk office-scene__desk--group-de"></div>
+          </div>
+        </div>
+
+        <div class="character-groups">
+
+  <!-- Group A: solo -->
+  <div
+    id="character-group-a"
+    class="character-group character-group--a"
+    data-group="A"
+  >
+    <div
+      id="character-a"
+      class="character character--boss"
+      data-character="A"
+    >
+      <img
+        id="character-a-sprite"
+        class="character__sprite character__sprite--image"
+        src="Pics/A01.webp"
+        alt=""
+      >
+      
+    </div>
+  </div>
+
+  <!-- Group BC: ONE image window -->
+  <div
+    id="character-group-bc"
+    class="character-group character-group--bc"
+    data-group="BC"
+  >
+    <div
+      id="character-bc"
+      class="character character--boss"
+      data-character="BC"
+    >
+      <img
+        id="character-bc-sprite"
+        class="character__sprite character__sprite--image character__sprite--bc"
+        src="Pics/BC_normal_01.webp"
+        alt=""
+      >
+
+      
+    </div>
+  </div>
+
+  <div class="character-groups__spacer" aria-hidden="true"></div>
+
+  <!-- Group DE: ONE image window -->
+  <div
+    id="character-group-de"
+    class="character-group character-group--de"
+    data-group="DE"
+  >
+    <div
+      id="character-de"
+      class="character character--couple"
+      data-character="DE"
+    >
+      <img
+        id="character-de-sprite"
+        class="character__sprite character__sprite--image"
+        src="Pics/DE_argue_01.webp"
+        alt=""
+      >
+
+     
+    </div>
+  </div>
+
+</div>
+
+        <div id="character-f" class="character-f" hidden>
+          <img
+            id="character-f-sprite"
+            class="character-f__sprite"
+            src="Pics/F_crying_01.webp"
+            alt=""
+          >
+        </div>
+      </main>
+
+      <footer class="game-controls">
+        <button id="kiss-btn" class="btn btn--kiss" disabled>
+          KISS
+          <span class="btn__hint">（按住）</span>
+        </button>
+      </footer>
+    </section>
+
+    <!-- End Screen (placeholder) -->
+    <section id="end-screen" class="screen">
+      <div class="panel panel--end">
+        <h2 id="end-title" class="title title--sm">Game Over</h2>
+        <p id="end-message" class="end-message">—</p>
+        <div class="end-stats">
+          <p>玩家：<span id="end-player-name">—</span></p>
+          <p>分數：<span id="end-score">0</span></p>
+        </div>
+        <div class="button-row">
+          <button id="restart-btn" class="btn btn--primary">再玩一次</button>
+          <button id="end-leaderboard-btn" class="btn btn--secondary">View Leaderboard</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Leaderboard Modal -->
+    <dialog id="leaderboard-modal" class="modal">
+      <div class="panel panel--modal">
+        <h2 class="title title--sm">Leaderboard</h2>
+        <ol id="leaderboard-list" class="leaderboard-list">
+          <li class="leaderboard-list__empty">尚無紀錄</li>
+        </ol>
+        <div class="button-row">
+          <button id="close-leaderboard-btn" class="btn btn--secondary">關閉</button>
+          <button id="clear-leaderboard-btn" class="btn btn--danger">Clear Leaderboard</button>
+        </div>
+      </div>
+    </dialog>
+
+    <div id="ending-overlay" class="ending-overlay" hidden>
+      <img id="ending-overlay-image" class="ending-overlay__image" alt="">
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
