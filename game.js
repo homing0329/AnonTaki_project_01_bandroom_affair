@@ -40,6 +40,7 @@ const GAME_CONFIG = {
   },
 
   kissCycleDuration: 1000,
+  breathHoldMin: 35,
 
   // Speed tiers use kisses in the CURRENT hold, not total score.
   // Release the button to reset back to the first tier.
@@ -430,6 +431,8 @@ class CharacterAnimationManager {
 
     this._startAAnimation();
     this.setCoupleState(GAME_CONFIG.coupleStates.ARGUING);
+    this.hideDEBreath();
+    this.hideF();
   }
 
   stop({ includeA = true } = {}) {
@@ -445,6 +448,7 @@ class CharacterAnimationManager {
 
     this._clearCaughtTimer();
     this.hideF();
+    this.hideDEBreath();
   }
 
   _clearCaughtTimer() {
@@ -629,6 +633,16 @@ class CharacterAnimationManager {
       sprite.src = this.aFrames[this._aIndex];
     }
   }
+
+  showDEBreath() {
+    const el = document.getElementById('character-de-breath');
+    if (el) el.hidden = false;
+  }
+
+  hideDEBreath() {
+    const el = document.getElementById('character-de-breath');
+    if (el) el.hidden = true;
+  }
 }
 
 /* =============================================================================
@@ -662,6 +676,7 @@ class KissSystem {
 
   this.isKissing = true;
   this.holdKissCount = 0;
+  this.characterAnim.hideDEBreath();
 
   this.characterAnim.setCoupleState(
     GAME_CONFIG.coupleStates.KISSING
@@ -708,6 +723,10 @@ class KissSystem {
   if (completedKiss) {
     this.holdKissCount += 1;
 
+    if (this.holdKissCount > GAME_CONFIG.breathHoldMin) {
+      this.characterAnim.showDEBreath();
+    }
+
     const newScore =
       this.scoreSystem.addKiss();
 
@@ -732,6 +751,7 @@ class KissSystem {
    * 尚未完成的 cycle 不會計分。
    */
   stopKissing() {
+    this.characterAnim.hideDEBreath();
     if (!this.isKissing) return;
 
     this.isKissing = false;
@@ -755,6 +775,8 @@ class KissSystem {
       clearTimeout(this._cycleTimeoutId);
       this._cycleTimeoutId = null;
     }
+
+    this.characterAnim.hideDEBreath();
   }
 
   reset() {
@@ -1009,13 +1031,26 @@ class GameManager {
     document.getElementById('close-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.close());
     document.getElementById('clear-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.clear());
 
-    const kissBtn = this.ui.kissBtn;
-    if (kissBtn) {
-      kissBtn.addEventListener('mousedown', () => this._onKissStart());
-      kissBtn.addEventListener('mouseup', () => this._onKissStop());
-      kissBtn.addEventListener('mouseleave', () => this._onKissStop());
-      kissBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this._onKissStart(); });
-      kissBtn.addEventListener('touchend', (e) => { e.preventDefault(); this._onKissStop(); });
+    const gameScreen = document.getElementById('game-screen');
+    if (gameScreen) {
+      gameScreen.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (this.gamePhase !== 'playing') return;
+        e.preventDefault();
+        try {
+          gameScreen.setPointerCapture(e.pointerId);
+        } catch (err) {
+          /* ignore */
+        }
+        this._onKissStart();
+      });
+      gameScreen.addEventListener('pointerup', (e) => {
+        if (gameScreen.hasPointerCapture?.(e.pointerId)) {
+          gameScreen.releasePointerCapture(e.pointerId);
+        }
+        this._onKissStop();
+      });
+      gameScreen.addEventListener('pointercancel', () => this._onKissStop());
     }
 
     this.ui.playerNameInput?.addEventListener('keydown', (e) => {

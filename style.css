@@ -49,7 +49,7 @@ body {
 }
 
 #app {
-  width: min(960px, 100%);
+  width: min(1200px, 100%);
 }
 
 /* Screens */
@@ -302,16 +302,23 @@ body {
 }
 
 /* Office Scene */
+#game-screen.screen--active {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  cursor: pointer;
+}
+
 .office-scene {
   --character-width: 90px;
   --character-gap: 2px;
   --group-inner-gap: 8px;
-  --group-bc-offset: -20px;
-  --group-middle-gap: 60px;
+  --group-bc-offset: -200px;
+  --group-middle-gap: -460px;
 
   position: relative;
-  height: 420px;
-  background: linear-gradient(180deg, var(--color-office-wall) 55%, var(--color-office-floor) 55%);
+  height: 620px;
+  background: url('Pics/bg.webp') center / cover no-repeat;
   border: 2px solid var(--color-panel-border);
   border-radius: var(--radius);
   overflow: hidden;
@@ -320,12 +327,7 @@ body {
 
 /* Desks — aligned with character groups */
 .office-scene__desks {
-  position: absolute;
-  bottom: 28%;
-  left: 0;
-  right: 0;
-  padding: 0 4%;
-  z-index: 1;
+  display: none;
 }
 
 .office-scene__desk-row {
@@ -360,24 +362,25 @@ body {
 
 .character-group--a {
   flex: 0 0 auto;
-  transform: translate(-70px, 20px);
+  transform: translate(-130px, 80px);
 }
 
 .character-group--bc {
   flex: 0 0 auto;
   margin-left: var(--group-bc-offset);
-  transform: translate(-50px, 30px);
+  transform: translate(-150px,80px);
 }
 
 .character-group--de {
   flex: 0 0 auto;
-  transform: translate(0, 0);
+  margin-left: var(--group-middle-gap);
+  transform: translate(-180px, 0);
 }
 
 /* Character groups: A (left) | BC (near A) | ~2 bodies gap | DE (right) */
 .character-groups {
   position: absolute;
-  bottom: 12%;
+  bottom: 2%;
   left: 0;
   right: 0;
   display: flex;
@@ -430,8 +433,8 @@ body {
 /* BC：單一圖片窗口 */
 .character-group--bc .character__sprite--image,
 .character__sprite--bc {
-  width: 300px;
-  height: 350px;
+  width: 500px;
+  height: 550px;
   max-width: none;
   border: none;
   border-radius: 0;
@@ -441,21 +444,10 @@ body {
 }
 
 
-/* DE：單一圖片窗口 */
-.character-group--de .character__sprite--image {
-  width: 330px;
-  height: 330px;
-  max-width: none;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  object-fit: contain;
-  display: block;
-}
 
-.character__sprite--image {
-  width: 300px;
-  height: 300px;
+.character__sprite--image { /* A pic size */
+  width: 500px;
+  height: 500px;
   max-width: none;
   border: none;
   border-radius: 0;
@@ -494,10 +486,30 @@ body {
   transform: scale(1.08);
 }
 
+.character-group--de .character {
+  isolation: isolate;
+}
+
+.character__breath {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 330px;
+  height: 330px;
+  object-fit: contain;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.character__breath[hidden] {
+  display: none;
+}
+
 /* Game controls */
 .game-controls {
-  display: flex;
-  justify-content: center;
+  display: none;
 }
 
 .end-message {
@@ -571,9 +583,9 @@ body {
   color: var(--color-text-muted);
 }
 
-.character-group--de .character__sprite--image {
-  width: 380px;
-  height: 250px;
+.character-group--de .character__sprite--image { /*DE pic size */
+  width: 500px;
+  height: 500px;
   max-width: none;
   border: none;
   border-radius: 0;
