@@ -39,6 +39,11 @@ const GAME_CONFIG = {
     lookingFrameMax: 2000,
   },
 
+  coupleTiming: {
+    argueFrameMin: 600,
+    argueFrameMax: 1800,
+  },
+
   kissCycleDuration: 1000,
   breathHoldMin: 35,
 
@@ -364,10 +369,10 @@ class CharacterAnimationManager {
   constructor({ getElapsedRatio } = {}) {
     this.getElapsedRatio = getElapsedRatio || (() => 0);
     this.elements = {
-  A: document.getElementById('character-a'),
-  BC: document.getElementById('character-bc'),
-  DE: document.getElementById('character-de'),
-};
+      A: document.getElementById('character-a'),
+      BC: document.getElementById('character-bc'),
+      DE: document.getElementById('character-de'),
+    };
 
     // Art asset groups — swap sprites on these containers when art is ready
     this.groups = {
@@ -385,41 +390,42 @@ class CharacterAnimationManager {
     this._deIndex = 0;
     this._lastBCIdle = null;
     this._lastBCLooking = null;
+    this._lastDEArguing = null;
     this._sadIndex = 0;
     this._sadDeadline = 0;
 
     this._aIntervalId = null;
-    this._deIntervalId = null;
+    this._deTimeoutId = null;
     this._caughtTimeoutId = null;
   }
 
-    startInitialKiss() {
-  const frames = this.deKissingFrames;
+  startInitialKiss() {
+    const frames = this.deKissingFrames;
 
-  if (!frames.length) return;
+    if (!frames.length) return;
 
-  // 第一次按下 KISS，從 DE_kiss_01.webp 開始
-  this._deIndex = 0;
-  this._applyDEFrame(frames);
-}
+    // 第一次按下 KISS，從 DE_kiss_01.webp 開始
+    this._deIndex = 0;
+    this._applyDEFrame(frames);
+  }
 
   advanceKissFrame() {
-  const frames = this.deKissingFrames;
+    const frames = this.deKissingFrames;
 
-  if (!frames.length) return false;
+    if (!frames.length) return false;
 
-  // 01 → 02 → 01 → 02 → ...
-  this._deIndex =
-    (this._deIndex + 1) % frames.length;
+    // 01 → 02 → 01 → 02 → ...
+    this._deIndex =
+      (this._deIndex + 1) % frames.length;
 
-  this._applyDEFrame(frames);
+    this._applyDEFrame(frames);
 
-  // 只有 01 → 02 才算完成一次 Kiss
-  const completedKiss =
-    this._deIndex === 1;
+    // 只有 01 → 02 才算完成一次 Kiss
+    const completedKiss =
+      this._deIndex === 1;
 
-  return completedKiss;
-}
+    return completedKiss;
+  }
 
   start() {
     this.stop();
@@ -428,6 +434,7 @@ class CharacterAnimationManager {
     this._deIndex = 0;
     this._lastBCIdle = null;
     this._lastBCLooking = null;
+    this._lastDEArguing = null;
 
     this._startAAnimation();
     this.setCoupleState(GAME_CONFIG.coupleStates.ARGUING);
@@ -441,14 +448,18 @@ class CharacterAnimationManager {
       this._aIntervalId = null;
     }
 
-    if (this._deIntervalId) {
-      clearInterval(this._deIntervalId);
-      this._deIntervalId = null;
-    }
+    this._clearDETimer();
 
     this._clearCaughtTimer();
     this.hideF();
     this.hideDEBreath();
+  }
+
+  _clearDETimer() {
+    if (this._deTimeoutId) {
+      clearTimeout(this._deTimeoutId);
+      this._deTimeoutId = null;
+    }
   }
 
   _clearCaughtTimer() {
@@ -582,10 +593,7 @@ class CharacterAnimationManager {
   }
 
   _startDEAnimation(isKissing) {
-    if (this._deIntervalId) {
-      clearInterval(this._deIntervalId);
-      this._deIntervalId = null;
-    }
+    this._clearDETimer();
 
     this._deIndex = 0;
 
@@ -595,37 +603,45 @@ class CharacterAnimationManager {
 
     if (!frames.length) return;
 
-    this._applyDEFrame(frames);
-
     // Kiss 圖片切換速度由 KissSystem 的 cycle 控制。
-    // 因此 KISS 狀態下不在這裡使用固定 interval。
-    if (isKissing) return;
-
-    // ARGUING 狀態使用固定速度輪播。
-    const duration = 1000;
-
-    this._deIntervalId = setInterval(() => {
-      if (this._deIndex >= frames.length - 1) {
-        this._deIndex = 0;
-      } else {
-        this._deIndex += 1;
-      }
-
+    // 因此 KISS 狀態下不在這裡使用計時器。
+    if (isKissing) {
       this._applyDEFrame(frames);
+      return;
+    }
+
+    // ARGUING 狀態使用隨機抽取圖片 + 隨機時間播放
+    this._playNextDEArgue();
+  }
+
+  _playNextDEArgue() {
+    if (!this.deArguingFrames.length) return;
+
+    const frame = pickRandom(this.deArguingFrames, this._lastDEArguing);
+    this._lastDEArguing = frame;
+    this.setDEImage(frame);
+
+    const timing = GAME_CONFIG.coupleTiming || {};
+    const min = timing.argueFrameMin ?? 600;
+    const max = timing.argueFrameMax ?? 1800;
+    const duration = randomMs(min, max);
+
+    this._deTimeoutId = setTimeout(() => {
+      this._playNextDEArgue();
     }, duration);
   }
 
   _applyDEFrame(frames) {
-  if (!frames || !frames.length) return;
+    if (!frames || !frames.length) return;
 
-  const frame = frames[this._deIndex % frames.length];
+    const frame = frames[this._deIndex % frames.length];
 
-  const sprite = document.getElementById('character-de-sprite');
+    const sprite = document.getElementById('character-de-sprite');
 
-  if (!sprite) return;
+    if (!sprite) return;
 
-  sprite.src = frame;
-}
+    sprite.src = frame;
+  }
 
   _applyAFrame() {
     const sprite = document.getElementById('character-a-sprite');
@@ -672,21 +688,21 @@ class KissSystem {
    * Cycle 完成後會自動開始下一個 Cycle。
    */
   startKissing() {
-  if (this.isKissing) return;
+    if (this.isKissing) return;
 
-  this.isKissing = true;
-  this.holdKissCount = 0;
-  this.characterAnim.hideDEBreath();
+    this.isKissing = true;
+    this.holdKissCount = 0;
+    this.characterAnim.hideDEBreath();
 
-  this.characterAnim.setCoupleState(
-    GAME_CONFIG.coupleStates.KISSING
-  );
+    this.characterAnim.setCoupleState(
+      GAME_CONFIG.coupleStates.KISSING
+    );
 
-  // 第一次按下 KISS，先顯示 DE_kiss_01.webp
-  this.characterAnim.startInitialKiss();
+    // 第一次按下 KISS，先顯示 DE_kiss_01.webp
+    this.characterAnim.startInitialKiss();
 
-  this._scheduleNextCycle();
-}
+    this._scheduleNextCycle();
+  }
 
   /**
    * Schedule one Kiss Cycle.
@@ -711,35 +727,35 @@ class KissSystem {
       GAME_CONFIG.kissCycleDuration / speedMultiplier;
 
     this._cycleTimeoutId = setTimeout(() => {
-  this._cycleTimeoutId = null;
+      this._cycleTimeoutId = null;
 
-  // 切換 Kiss 圖片：
-  // DE_kiss_01.webp → DE_kiss_02.webp
-  // DE_kiss_02.webp → DE_kiss_01.webp
-  const completedKiss =
-    this.characterAnim.advanceKissFrame();
+      // 切換 Kiss 圖片：
+      // DE_kiss_01.webp → DE_kiss_02.webp
+      // DE_kiss_02.webp → DE_kiss_01.webp
+      const completedKiss =
+        this.characterAnim.advanceKissFrame();
 
-  // 只有 DE_kiss_01.webp → DE_kiss_02.webp 才加分
-  if (completedKiss) {
-    this.holdKissCount += 1;
+      // 只有 DE_kiss_01.webp → DE_kiss_02.webp 才加分
+      if (completedKiss) {
+        this.holdKissCount += 1;
 
-    if (this.holdKissCount > GAME_CONFIG.breathHoldMin) {
-      this.characterAnim.showDEBreath();
-    }
+        if (this.holdKissCount > GAME_CONFIG.breathHoldMin) {
+          this.characterAnim.showDEBreath();
+        }
 
-    const newScore =
-      this.scoreSystem.addKiss();
+        const newScore =
+          this.scoreSystem.addKiss();
 
-    // 通知 GameManager / UI 更新 HUD
-    if (this.onScoreChange) {
-      this.onScoreChange(newScore);
-    }
-  }
+        // 通知 GameManager / UI 更新 HUD
+        if (this.onScoreChange) {
+          this.onScoreChange(newScore);
+        }
+      }
 
-  // 下一個 Cycle
-  this._scheduleNextCycle();
+      // 下一個 Cycle
+      this._scheduleNextCycle();
 
-}, cycleDuration);
+    }, cycleDuration);
   }
 
   /**
@@ -979,11 +995,79 @@ function escapeHtml(str) {
 }
 
 /* =============================================================================
+ * THEME MANAGER
+ * ============================================================================= */
+
+class ThemeManager {
+  constructor() {
+    this.storageKey = 'officeAffairTheme';
+    this.toggleBtn = document.getElementById('theme-toggle-btn');
+    this.iconEl = document.getElementById('theme-toggle-icon');
+    this.textEl = document.getElementById('theme-toggle-text');
+
+    this.currentTheme = this._getInitialTheme();
+    this.applyTheme(this.currentTheme);
+    this._bindEvents();
+  }
+
+  _getInitialTheme() {
+    try {
+      const saved = localStorage.getItem(this.storageKey);
+      if (saved === 'light' || saved === 'dark') return saved;
+    } catch (e) {
+      /* ignore */
+    }
+    return 'dark';
+  }
+
+  applyTheme(theme) {
+    this.currentTheme = theme;
+    const isLight = theme === 'light';
+
+    document.documentElement.classList.toggle('theme-light', isLight);
+    document.body.classList.toggle('theme-light', isLight);
+
+    if (this.iconEl) {
+      this.iconEl.textContent = isLight ? '🌙' : '☀️';
+    }
+    if (this.textEl) {
+      this.textEl.textContent = isLight ? 'Dark 背景' : 'Light 背景';
+    }
+    if (this.toggleBtn) {
+      const label = isLight ? '切換為 Dark 背景' : '切換為 Light 背景';
+      this.toggleBtn.setAttribute('aria-label', label);
+      this.toggleBtn.setAttribute('title', label);
+    }
+
+    try {
+      localStorage.setItem(this.storageKey, theme);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  toggleTheme() {
+    const nextTheme = this.currentTheme === 'light' ? 'dark' : 'light';
+    this.applyTheme(nextTheme);
+  }
+
+  _bindEvents() {
+    if (!this.toggleBtn) return;
+    this.toggleBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleTheme();
+    });
+  }
+}
+
+/* =============================================================================
  * GAME MANAGER
  * ============================================================================= */
 
 class GameManager {
   constructor() {
+    this.themeManager = new ThemeManager();
     this.ui = new UIManager();
     this.scoreSystem = new ScoreSystem();
     this.characterAnim = new CharacterAnimationManager({

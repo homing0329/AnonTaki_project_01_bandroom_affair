@@ -5,9 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Office Affair</title>
   <link rel="stylesheet" href="style.css">
+  <script>
+    (function() {
+      try {
+        if (localStorage.getItem('officeAffairTheme') === 'light') {
+          document.documentElement.classList.add('theme-light');
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div id="app">
+    <!-- Theme Toggle Button -->
+    <button
+      id="theme-toggle-btn"
+      class="theme-toggle-btn"
+      type="button"
+      aria-label="切換為 Light 背景"
+      title="切換背景顏色 (Dark / Light)"
+    >
+      <span id="theme-toggle-icon" class="theme-toggle-btn__icon" aria-hidden="true">☀️</span>
+      <span id="theme-toggle-text" class="theme-toggle-btn__text">Light 背景</span>
+    </button>
+
     <!-- Start Screen -->
     <section id="start-screen" class="screen screen--active">
       <div class="panel panel--start">
