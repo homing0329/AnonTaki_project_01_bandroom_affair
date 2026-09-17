@@ -1062,6 +1062,72 @@ class ThemeManager {
 }
 
 /* =============================================================================
+ * ASSET PRELOADER
+ * ============================================================================= */
+
+class AssetPreloader {
+  constructor({ onProgress, onComplete } = {}) {
+    this.onProgress = onProgress || (() => {});
+    this.onComplete = onComplete || (() => {});
+    this.urls = this._gatherAllUrls();
+    this.loadedCount = 0;
+    this.totalCount = this.urls.length;
+    this.cachedImages = new Map();
+    this.isDone = false;
+  }
+
+  _gatherAllUrls() {
+    const set = new Set();
+    function traverse(val) {
+      if (typeof val === 'string' && /\.(webp|png|jpg|jpeg|gif)$/i.test(val)) {
+        set.add(val);
+      } else if (Array.isArray(val)) {
+        val.forEach(traverse);
+      } else if (val && typeof val === 'object') {
+        Object.values(val).forEach(traverse);
+      }
+    }
+    traverse(GAME_CONFIG.characterAssets);
+    set.add('Pics/bg.webp');
+    set.add('Pics/breath_01.webp');
+    return Array.from(set);
+  }
+
+  start() {
+    if (!this.totalCount) {
+      this.isDone = true;
+      this.onProgress(1, 0, 0);
+      this.onComplete();
+      return;
+    }
+
+    this.urls.forEach((url) => {
+      const img = new Image();
+      img.onload = () => this._handleLoad(url, img, false);
+      img.onerror = () => this._handleLoad(url, img, true);
+      img.src = url;
+      if ('decode' in img) {
+        img.decode().catch(() => {});
+      }
+    });
+  }
+
+  _handleLoad(url, img, isError = false) {
+    if (this.cachedImages.has(url)) return;
+    this.cachedImages.set(url, img);
+    this.loadedCount += 1;
+
+    const ratio = Math.min(1, this.loadedCount / this.totalCount);
+    this.onProgress(ratio, this.loadedCount, this.totalCount);
+
+    if (this.loadedCount >= this.totalCount && !this.isDone) {
+      this.isDone = true;
+      this.onComplete();
+    }
+  }
+}
+
+/* =============================================================================
  * GAME MANAGER
  * ============================================================================= */
 
@@ -1095,9 +1161,47 @@ class GameManager {
     this.wasCaught = false;
     this._overlayTimeoutId = null;
 
+    this._initPreloader();
     this._bindEvents();
     this.ui.showScreen('start');
     this.ui.updateBossWarning(GAME_CONFIG.bossStates.IDLE);
+  }
+
+  _initPreloader() {
+    const startBtn = document.getElementById('start-btn');
+    const fillEl = document.getElementById('preload-fill');
+    const statusEl = document.getElementById('preload-status');
+    const container = document.getElementById('preload-container');
+
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.textContent = '資源載入中...';
+    }
+
+    this.preloader = new AssetPreloader({
+      onProgress: (ratio, loaded, total) => {
+        const percent = Math.round(ratio * 100);
+        if (fillEl) fillEl.style.width = percent + '%';
+        if (statusEl) statusEl.textContent = `資源載入中... ${percent}% (${loaded}/${total})`;
+        if (startBtn && !this.preloader.isDone) {
+          startBtn.disabled = true;
+          startBtn.textContent = `資源載入中 (${percent}%)`;
+        }
+      },
+      onComplete: () => {
+        if (fillEl) fillEl.style.width = '100%';
+        if (statusEl) statusEl.textContent = '素材載入完成，隨時可開始！';
+        if (startBtn) {
+          startBtn.disabled = false;
+          startBtn.textContent = '開始遊戲';
+        }
+        setTimeout(() => {
+          container?.classList.add('is-hidden');
+        }, 700);
+      },
+    });
+
+    this.preloader.start();
   }
 
   _getElapsedRatio() {
@@ -1108,7 +1212,10 @@ class GameManager {
   }
 
   _bindEvents() {
-    document.getElementById('start-btn')?.addEventListener('click', () => this.startGame());
+    document.getElementById('start-btn')?.addEventListener('click', () => {
+      if (!this.preloader?.isDone) return;
+      this.startGame();
+    });
     document.getElementById('restart-btn')?.addEventListener('click', () => this.returnToMenu());
     document.getElementById('view-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.open());
     document.getElementById('end-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.open());
@@ -1138,11 +1245,15 @@ class GameManager {
     }
 
     this.ui.playerNameInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') this.startGame();
+      if (e.key === 'Enter') {
+        if (!this.preloader?.isDone) return;
+        this.startGame();
+      }
     });
   }
 
   startGame() {
+    if (!this.preloader?.isDone) return;
     this.playerName = this.ui.getPlayerNameInput();
     this.gamePhase = 'playing';
     this.wasCaught = false;
