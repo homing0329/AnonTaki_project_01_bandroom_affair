@@ -45,16 +45,16 @@ const GAME_CONFIG = {
   },
 
   kissCycleDuration: 1000,
-  breathHoldMin: 35,
+  breathMultiplierMin: 10,
 
   // Speed tiers use kisses in the CURRENT hold, not total score.
   // Release the button to reset back to the first tier.
   speedTiers: [
-    { minScore: 0, maxScore: 15, multiplier: 4.0 },
-    { minScore: 16, maxScore: 35, multiplier: 7 },
-    { minScore: 36, maxScore: 50, multiplier: 10 },
-    { minScore: 51, maxScore: 75, multiplier: 14 },
-    { minScore: 76, maxScore: Infinity, multiplier: 20 },
+    { minScore: 0, maxScore: 10, multiplier: 4.0 },
+    { minScore: 11, maxScore: 23, multiplier: 7 },
+    { minScore: 24, maxScore: 42, multiplier: 10 },
+    { minScore: 43, maxScore: 64, multiplier: 14 },
+    { minScore: 65, maxScore: Infinity, multiplier: 20 },
   ],
 
   caught: {
@@ -581,6 +581,10 @@ class CharacterAnimationManager {
     const isKissing =
       state === GAME_CONFIG.coupleStates.KISSING;
 
+    if (!isKissing) {
+      this.hideDEBreath();
+    }
+
     ['D', 'E'].forEach((id) => {
       const el = this.elements[id];
       if (!el) return;
@@ -739,7 +743,7 @@ class KissSystem {
       if (completedKiss) {
         this.holdKissCount += 1;
 
-        if (this.holdKissCount > GAME_CONFIG.breathHoldMin) {
+        if (getKissSpeedMultiplier(this.holdKissCount) >= GAME_CONFIG.breathMultiplierMin) {
           this.characterAnim.showDEBreath();
         }
 
@@ -855,7 +859,8 @@ class LeaderboardSystem {
   render(entries) {
     if (!this.listEl) return;
     if (!entries.length) {
-      this.listEl.innerHTML = '<li class="leaderboard-list__empty">尚無紀錄</li>';
+      const emptyText = window.langManager ? window.langManager.get('leaderboardEmpty') : '尚無紀錄';
+      this.listEl.innerHTML = `<li class="leaderboard-list__empty">${emptyText}</li>`;
       return;
     }
     this.listEl.innerHTML = entries
@@ -881,14 +886,336 @@ class LeaderboardSystem {
   }
 
   clear() {
-    const password = prompt('請輸入密碼以清除排行榜：');
+    const promptText = window.langManager ? window.langManager.get('clearPrompt') : '請輸入密碼以清除排行榜：';
+    const passErrorText = window.langManager ? window.langManager.get('passwordIncorrect') : '密碼錯誤';
+    const password = prompt(promptText);
     if (password === null) return;
     if (password !== GAME_CONFIG.leaderboardClearPassword) {
-      alert('密碼錯誤');
+      alert(passErrorText);
       return;
     }
     localStorage.removeItem(GAME_CONFIG.leaderboardKey);
     this.render([]);
+  }
+}
+
+/* =============================================================================
+ * I18N & LANGUAGE MANAGER
+ * ============================================================================= */
+
+const I18N = {
+  tc: {
+    title: 'Office Affair',
+    subtitle: '在辦公室偷偷親吻，別被老闆發現！',
+    playerNameLabel: '玩家名稱',
+    playerNamePlaceholder: '輸入你的名字',
+    startBtn: '開始遊戲',
+    rulesBtn: '遊戲玩法',
+    viewLeaderboardBtn: '排行榜',
+    playerHud: '玩家',
+    scoreHud: '親吻次數',
+    timeHud: '時間',
+    kissBtn: 'KISS',
+    kissHint: '（按住）',
+    gameOverTitle: '遊戲結束',
+    endPlayerLabel: '玩家：',
+    endScoreLabel: '分數：',
+    restartBtn: '再玩一次',
+    leaderboardTitle: '排行榜',
+    leaderboardEmpty: '尚無紀錄',
+    closeBtn: '關閉',
+    clearBtn: '清除排行榜',
+    clearPrompt: '請輸入密碼以清除排行榜：',
+    passwordIncorrect: '密碼錯誤',
+    defaultPlayerName: '無名氏',
+    rulesTitle: '遊戲玩法說明',
+    rulesHowTitle: '💋 如何接吻與得分',
+    rulesHowDesc: '按住畫面任意處或 KISS 按鈕，情侶 DE 即開始甜蜜接吻！只要按住不放，每完成一次接吻動作即獲得 1 分。',
+    rulesSpeedTitle: '⚡ 連鎖加速機制 (Speed Tiers)',
+    rulesSpeedDesc1: '在同一次長按中接吻次數越多，接吻速度會逐步加倍（4倍 → 7倍 → 10倍 → 14倍 → 20倍！）。',
+    rulesSpeedDesc2: '當速度達到 10 倍時，將觸發專屬深情喘氣特效！',
+    rulesSpeedNote: '※ 只要放開手指或滑鼠，當輪累積次數歸零，下一次接吻速度重置回起始速度。',
+    rulesBossTitle: '👀 警戒狀態與老闆巡視',
+    rulesBossIdle: 'Boss Idle：老闆正常背對工作，請把握時間接吻累積高分！',
+    rulesBossPrep: 'Boss Preparing：老闆即將回頭，請隨時準備放開！',
+    rulesBossLook: 'Boss Looking：老闆已回頭盯著！此時絕對不可接吻，否則立即當場抓包！',
+    rulesEndingTitle: '🏆 結局判定條件',
+    rulesEndingBad: 'BAD END：在老闆盯著看（Looking）時接吻被抓到。',
+    rulesEndingNormal: 'NORMAL END：時間結束存活，但得分未達 70 分。',
+    rulesEndingGood: 'GOOD END：時間結束存活，且親吻次數達到 70 分以上！',
+    tooltipHowTitle: '💋 如何接吻',
+    tooltipHowDesc: '按住畫面任意處或 KISS 按鈕開始親吻，持續按住可累積接吻次數。',
+    tooltipSpeedTitle: '⚡ 連鎖加速',
+    tooltipSpeedDesc: '同一次按住越久速度越快（最高 20 倍）。達 10 倍速時觸發深情喘氣特效。放開則重置速度。',
+    tooltipBossTitle: '👀 避開老闆目光',
+    tooltipBossIdle: 'Boss Idle：安全工作，把握時間接吻！',
+    tooltipBossPrep: 'Boss Preparing：老闆準備回頭，隨時準備放開！',
+    tooltipBossLook: 'Boss Looking：老闆正在盯著！絕對不能親吻，否則當場抓包！',
+    tooltipEndingTitle: '🏆 結局判定',
+    tooltipEndingBad: 'BAD END：接吻被抓包',
+    tooltipEndingNormal: 'NORMAL END：存活但未滿 70 分',
+    tooltipEndingGood: 'GOOD END：存活且達到 70 分以上',
+    bossWarningIdle: 'Boss Idle',
+    bossWarningPrepare: '⚠ Boss Preparing!',
+    bossWarningLooking: '👀 Boss Looking!',
+    bossWarningCaught: 'Caught!',
+    endingBad: '被老闆發現了！下次小心一點。',
+    endingNormal: '安全過關，但親吻次數還不夠多。',
+    endingGood: '完美過關！你是辦公室情場高手！',
+    preloadLoading: '資源載入中...',
+    preloadComplete: '素材載入完成，隨時可開始！',
+    themeDark: '切換為 Dark 背景',
+    themeLight: '切換為 Light 背景',
+  },
+  sc: {
+    title: 'Office Affair',
+    subtitle: '在办公室偷偷亲吻，别被老板发现！',
+    playerNameLabel: '玩家名称',
+    playerNamePlaceholder: '输入你的名字',
+    startBtn: '开始游戏',
+    rulesBtn: '游戏玩法',
+    viewLeaderboardBtn: '排行榜',
+    playerHud: '玩家',
+    scoreHud: '亲吻次数',
+    timeHud: '时间',
+    kissBtn: 'KISS',
+    kissHint: '（按住）',
+    gameOverTitle: '游戏结束',
+    endPlayerLabel: '玩家：',
+    endScoreLabel: '分数：',
+    restartBtn: '再玩一次',
+    leaderboardTitle: '排行榜',
+    leaderboardEmpty: '暂无记录',
+    closeBtn: '关闭',
+    clearBtn: '清除排行榜',
+    clearPrompt: '请输入密码以清除排行榜：',
+    passwordIncorrect: '密码错误',
+    defaultPlayerName: '无名氏',
+    rulesTitle: '游戏玩法说明',
+    rulesHowTitle: '💋 如何接吻与得分',
+    rulesHowDesc: '按住画面任意处或 KISS 按钮，情侣 DE 即开始甜蜜接吻！只要按住不放，每完成一次接吻动作即获得 1 分。',
+    rulesSpeedTitle: '⚡ 连锁加速机制 (Speed Tiers)',
+    rulesSpeedDesc1: '在同一次长按中接吻次数越多，接吻速度会逐步加倍（4倍 → 7倍 → 10倍 → 14倍 → 20倍！）。',
+    rulesSpeedDesc2: '当速度达到 10 倍时，将触发专属深情喘气特效！',
+    rulesSpeedNote: '※ 只要放开手指或鼠标，当轮累积次数归零，下一次接吻速度重置回起始速度。',
+    rulesBossTitle: '👀 警戒状态与老板巡视',
+    rulesBossIdle: 'Boss Idle：老板正常背对工作，请把握时间接吻累积高分！',
+    rulesBossPrep: 'Boss Preparing：老板即将回头，请随时准备放开！',
+    rulesBossLook: 'Boss Looking：老板已回头盯着！此时绝对不可接吻，否则立即当场抓包！',
+    rulesEndingTitle: '🏆 结局判定条件',
+    rulesEndingBad: 'BAD END：在老板盯着看（Looking）时接吻被抓到。',
+    rulesEndingNormal: 'NORMAL END：时间结束存活，但得分未达 70 分。',
+    rulesEndingGood: 'GOOD END：时间结束存活，且亲吻次数达到 70 分以上！',
+    tooltipHowTitle: '💋 如何接吻',
+    tooltipHowDesc: '按住画面任意处或 KISS 按钮开始亲吻，持续按住可累积接吻次数。',
+    tooltipSpeedTitle: '⚡ 连锁加速',
+    tooltipSpeedDesc: '同一次按住越久速度越快（最高 20 倍）。达 10 倍速时触发深情喘气特效。放开则重置速度。',
+    tooltipBossTitle: '👀 避开老板目光',
+    tooltipBossIdle: 'Boss Idle：安全工作，把握时间接吻！',
+    tooltipBossPrep: 'Boss Preparing：老板准备回头，随时准备放开！',
+    tooltipBossLook: 'Boss Looking：老板正在盯着！绝对不能亲吻，否则当场抓包！',
+    tooltipEndingTitle: '🏆 结局判定',
+    tooltipEndingBad: 'BAD END：接吻被抓包',
+    tooltipEndingNormal: 'NORMAL END：存活但未满 70 分',
+    tooltipEndingGood: 'GOOD END：存活且达到 70 分以上',
+    bossWarningIdle: 'Boss Idle',
+    bossWarningPrepare: '⚠ Boss Preparing!',
+    bossWarningLooking: '👀 Boss Looking!',
+    bossWarningCaught: 'Caught!',
+    endingBad: '被老板发现了！下次小心一点。',
+    endingNormal: '安全过关，但亲吻次数还不够多。',
+    endingGood: '完美过关！你是办公室情场高手！',
+    preloadLoading: '资源加载中...',
+    preloadComplete: '素材加载完成，随时可开始！',
+    themeDark: '切换为 Dark 背景',
+    themeLight: '切换为 Light 背景',
+  },
+  en: {
+    title: 'Office Affair',
+    subtitle: 'Sneak a kiss in the office, don’t get caught by the boss!',
+    playerNameLabel: 'Player Name',
+    playerNamePlaceholder: 'Enter your name',
+    startBtn: 'Start Game',
+    rulesBtn: 'How to Play',
+    viewLeaderboardBtn: 'Leaderboard',
+    playerHud: 'Player',
+    scoreHud: 'Kiss Count',
+    timeHud: 'Time',
+    kissBtn: 'KISS',
+    kissHint: ' (Hold)',
+    gameOverTitle: 'Game Over',
+    endPlayerLabel: 'Player: ',
+    endScoreLabel: 'Score: ',
+    restartBtn: 'Play Again',
+    leaderboardTitle: 'Leaderboard',
+    leaderboardEmpty: 'No records yet',
+    closeBtn: 'Close',
+    clearBtn: 'Clear Leaderboard',
+    clearPrompt: 'Enter password to clear leaderboard:',
+    passwordIncorrect: 'Incorrect password',
+    defaultPlayerName: 'Anonymous',
+    rulesTitle: 'How to Play',
+    rulesHowTitle: '💋 How to Kiss & Score',
+    rulesHowDesc: 'Hold anywhere on the screen or press and hold KISS to start kissing! For every completed kiss motion while holding, you earn 1 point.',
+    rulesSpeedTitle: '⚡ Combo Speed Tiers',
+    rulesSpeedDesc1: 'The longer you continuously hold and kiss, the faster they go (4x → 7x → 10x → 14x → 20x!).',
+    rulesSpeedDesc2: 'Reaching 10x speed triggers an exclusive steamy breath effect!',
+    rulesSpeedNote: '* Releasing your finger or mouse resets your current hold streak and returns kiss speed to start.',
+    rulesBossTitle: '👀 Boss Alert States',
+    rulesBossIdle: 'Boss Idle: Boss is working with back turned. Kiss now to rack up points!',
+    rulesBossPrep: 'Boss Preparing: Boss is about to turn around. Get ready to release!',
+    rulesBossLook: 'Boss Looking: Boss is watching! Do NOT kiss, or you will get busted!',
+    rulesEndingTitle: '🏆 Ending Conditions',
+    rulesEndingBad: 'BAD END: Caught kissing while the boss is looking.',
+    rulesEndingNormal: 'NORMAL END: Survived until time out, but scored under 70 points.',
+    rulesEndingGood: 'GOOD END: Survived until time out and scored 70 points or higher!',
+    tooltipHowTitle: '💋 How to Kiss',
+    tooltipHowDesc: 'Hold anywhere or press KISS to start kissing. Continuous hold racks up kisses.',
+    tooltipSpeedTitle: '⚡ Combo Speed',
+    tooltipSpeedDesc: 'Longer continuous hold = faster kissing (up to 20x). 10x triggers breath effect. Releasing resets speed.',
+    tooltipBossTitle: '👀 Watch Out for Boss',
+    tooltipBossIdle: 'Boss Idle: Safe to kiss! Rack up your score.',
+    tooltipBossPrep: 'Boss Preparing: Boss is turning, get ready to stop!',
+    tooltipBossLook: 'Boss Looking: Boss is watching! Stop kissing immediately!',
+    tooltipEndingTitle: '🏆 Endings',
+    tooltipEndingBad: 'BAD END: Caught kissing',
+    tooltipEndingNormal: 'NORMAL END: Survived, < 70 pts',
+    tooltipEndingGood: 'GOOD END: Survived, ≥ 70 pts',
+    bossWarningIdle: 'Boss Idle',
+    bossWarningPrepare: '⚠ Boss Preparing!',
+    bossWarningLooking: '👀 Boss Looking!',
+    bossWarningCaught: 'Caught!',
+    endingBad: 'Caught by the boss! Be more careful next time.',
+    endingNormal: 'Made it through safely, but not enough kisses.',
+    endingGood: 'Perfect run! You are a master of office romance!',
+    preloadLoading: 'Loading assets...',
+    preloadComplete: 'Assets loaded, ready to play!',
+    themeDark: 'Switch to Dark Theme',
+    themeLight: 'Switch to Light Theme',
+  },
+};
+
+class LanguageManager {
+  constructor() {
+    this.storageKey = 'officeAffairLang';
+    this.callbacks = [];
+    this.langOrder = ['tc', 'sc', 'en'];
+    this.toggleBtn = document.getElementById('lang-toggle-btn');
+    this.textEl = document.getElementById('lang-toggle-text');
+    this.currentLang = this._getInitialLang();
+    this.applyLang(this.currentLang, false);
+    this._bindEvents();
+  }
+
+  _getInitialLang() {
+    try {
+      const saved = localStorage.getItem(this.storageKey);
+      if (saved && (saved === 'en' || saved === 'sc' || saved === 'tc')) {
+        return saved;
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return 'tc';
+  }
+
+  onChange(fn) {
+    if (typeof fn === 'function') {
+      this.callbacks.push(fn);
+    }
+  }
+
+  get(key) {
+    const dict = I18N[this.currentLang] || I18N.tc;
+    return dict[key] !== undefined ? dict[key] : (I18N.tc[key] || key);
+  }
+
+  cycleLanguage() {
+    const currentIndex = this.langOrder.indexOf(this.currentLang);
+    const nextIndex = (currentIndex + 1) % this.langOrder.length;
+    this.setLanguage(this.langOrder[nextIndex]);
+  }
+
+  setLanguage(lang) {
+    if (lang !== 'en' && lang !== 'sc' && lang !== 'tc') return;
+    this.currentLang = lang;
+    try {
+      localStorage.setItem(this.storageKey, lang);
+    } catch (e) {
+      /* ignore */
+    }
+    this.applyLang(lang, true);
+  }
+
+  applyLang(lang, notify = true) {
+    // 1. Update HTML lang tag
+    const docLang = lang === 'en' ? 'en' : (lang === 'sc' ? 'zh-Hans' : 'zh-Hant');
+    document.documentElement.lang = docLang;
+
+    // 2. Update circular language button text and tooltip
+    if (this.textEl) {
+      this.textEl.textContent = lang.toUpperCase();
+    }
+    if (this.toggleBtn) {
+      const tooltips = {
+        tc: '切換語言 (目前: 繁中)',
+        sc: '切换语言 (目前: 简中)',
+        en: 'Switch Language (Current: EN)',
+      };
+      const label = tooltips[lang] || '切換語言 Language';
+      this.toggleBtn.setAttribute('title', label);
+      this.toggleBtn.setAttribute('aria-label', label);
+    }
+
+    // 3. Update text content
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const key = el.getAttribute('data-i18n');
+      const val = this.get(key);
+      if (val !== undefined) {
+        el.textContent = val;
+      }
+    });
+
+    // 4. Update placeholder
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+      const key = el.getAttribute('data-i18n-placeholder');
+      const val = this.get(key);
+      if (val !== undefined) {
+        el.placeholder = val;
+      }
+    });
+
+    // 5. Update title & aria-label
+    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+      const key = el.getAttribute('data-i18n-title');
+      const val = this.get(key);
+      if (val !== undefined) {
+        el.setAttribute('title', val);
+        if (el.hasAttribute('aria-label')) {
+          el.setAttribute('aria-label', val);
+        }
+      }
+    });
+
+    // 6. Notify observers
+    if (notify) {
+      this.callbacks.forEach((fn) => {
+        try {
+          fn(lang);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+    }
+  }
+
+  _bindEvents() {
+    if (!this.toggleBtn) return;
+    this.toggleBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.cycleLanguage();
+    });
   }
 }
 
@@ -914,11 +1241,29 @@ class UIManager {
     this.playerNameInput = document.getElementById('player-name-input');
     this.endingOverlay = document.getElementById('ending-overlay');
     this.endingOverlayImage = document.getElementById('ending-overlay-image');
+    this.gameplayHelp = document.getElementById('gameplay-help-container');
+    this.rulesModal = document.getElementById('rules-modal');
+    this.lastBossState = 'IDLE';
+    this.lastEndData = null;
   }
 
   showScreen(name) {
     Object.values(this.screens).forEach((el) => el?.classList.remove('screen--active'));
     this.screens[name]?.classList.add('screen--active');
+
+    // "?" gameplay help button is only active during gameplay screen
+    if (this.gameplayHelp) {
+      this.gameplayHelp.hidden = name !== 'game';
+      this.gameplayHelp.classList.remove('is-active');
+    }
+  }
+
+  openRules() {
+    this.rulesModal?.showModal();
+  }
+
+  closeRules() {
+    this.rulesModal?.close();
   }
 
   updateHUD({ playerName, score, timer }) {
@@ -929,15 +1274,24 @@ class UIManager {
 
   updateBossWarning(state) {
     if (!this.bossWarning) return;
+    this.lastBossState = state;
+    const lm = window.langManager;
     const labels = {
-      IDLE: 'Boss Idle',
-      PREPARE: '⚠ Boss Preparing!',
-      LOOKING: '👀 Boss Looking!',
-      CAUGHT: 'Caught!',
+      IDLE: lm ? lm.get('bossWarningIdle') : 'Boss Idle',
+      PREPARE: lm ? lm.get('bossWarningPrepare') : '⚠ Boss Preparing!',
+      LOOKING: lm ? lm.get('bossWarningLooking') : '👀 Boss Looking!',
+      CAUGHT: lm ? lm.get('bossWarningCaught') : 'Caught!',
     };
     this.bossWarning.className = 'boss-warning boss-warning--' + state.toLowerCase();
     if (this.bossWarningText) {
       this.bossWarningText.textContent = labels[state] || state;
+    }
+  }
+
+  onLanguageChange() {
+    this.updateBossWarning(this.lastBossState || 'IDLE');
+    if (this.screens.end?.classList.contains('screen--active') && this.lastEndData) {
+      document.getElementById('end-message').textContent = getEndingMessage(this.lastEndData.ending);
     }
   }
 
@@ -950,6 +1304,7 @@ class UIManager {
   }
 
   showEndScreen({ playerName, score, ending }) {
+    this.lastEndData = { playerName, score, ending };
     document.getElementById('end-title').textContent = ending;
     document.getElementById('end-message').textContent = getEndingMessage(ending);
     document.getElementById('end-player-name').textContent = playerName;
@@ -967,6 +1322,10 @@ class UIManager {
   }
 
   showEndingOverlay(src) {
+    if (this.gameplayHelp) {
+      this.gameplayHelp.hidden = true;
+      this.gameplayHelp.classList.remove('is-active');
+    }
     if (!this.endingOverlay || !this.endingOverlayImage) return;
     this.endingOverlayImage.src = src;
     this.endingOverlay.hidden = false;
@@ -980,12 +1339,17 @@ class UIManager {
 }
 
 function getEndingMessage(ending) {
-  const messages = {
-    'BAD END': '被老闆發現了！下次小心一點。',
-    'NORMAL END': '安全過關，但親吻次數還不夠多。',
-    'GOOD END': '完美過關！你是辦公室情場高手！',
-  };
-  return messages[ending] || '';
+  const lm = window.langManager;
+  if (ending === 'BAD END') {
+    return lm ? lm.get('endingBad') : '被老闆發現了！下次小心一點。';
+  }
+  if (ending === 'NORMAL END') {
+    return lm ? lm.get('endingNormal') : '安全過關，但親吻次數還不夠多。';
+  }
+  if (ending === 'GOOD END') {
+    return lm ? lm.get('endingGood') : '完美過關！你是辦公室情場高手！';
+  }
+  return '';
 }
 
 function escapeHtml(str) {
@@ -1003,7 +1367,6 @@ class ThemeManager {
     this.storageKey = 'officeAffairTheme';
     this.toggleBtn = document.getElementById('theme-toggle-btn');
     this.iconEl = document.getElementById('theme-toggle-icon');
-    this.textEl = document.getElementById('theme-toggle-text');
 
     this.currentTheme = this._getInitialTheme();
     this.applyTheme(this.currentTheme);
@@ -1030,20 +1393,22 @@ class ThemeManager {
     if (this.iconEl) {
       this.iconEl.textContent = isLight ? '🌙' : '☀️';
     }
-    if (this.textEl) {
-      this.textEl.textContent = isLight ? 'Dark 背景' : 'Light 背景';
-    }
-    if (this.toggleBtn) {
-      const label = isLight ? '切換為 Dark 背景' : '切換為 Light 背景';
-      this.toggleBtn.setAttribute('aria-label', label);
-      this.toggleBtn.setAttribute('title', label);
-    }
+    this.updateTitle();
 
     try {
       localStorage.setItem(this.storageKey, theme);
     } catch (e) {
       /* ignore */
     }
+  }
+
+  updateTitle() {
+    if (!this.toggleBtn) return;
+    const isLight = this.currentTheme === 'light';
+    const key = isLight ? 'themeDark' : 'themeLight';
+    const label = window.langManager ? window.langManager.get(key) : (isLight ? '切換為 Dark 背景' : '切換為 Light 背景');
+    this.toggleBtn.setAttribute('aria-label', label);
+    this.toggleBtn.setAttribute('title', label);
   }
 
   toggleTheme() {
@@ -1067,8 +1432,8 @@ class ThemeManager {
 
 class AssetPreloader {
   constructor({ onProgress, onComplete } = {}) {
-    this.onProgress = onProgress || (() => {});
-    this.onComplete = onComplete || (() => {});
+    this.onProgress = onProgress || (() => { });
+    this.onComplete = onComplete || (() => { });
     this.urls = this._gatherAllUrls();
     this.loadedCount = 0;
     this.totalCount = this.urls.length;
@@ -1107,7 +1472,7 @@ class AssetPreloader {
       img.onerror = () => this._handleLoad(url, img, true);
       img.src = url;
       if ('decode' in img) {
-        img.decode().catch(() => {});
+        img.decode().catch(() => { });
       }
     });
   }
@@ -1133,8 +1498,12 @@ class AssetPreloader {
 
 class GameManager {
   constructor() {
+    this.langManager = new LanguageManager();
+    window.langManager = this.langManager;
     this.themeManager = new ThemeManager();
+    window.themeManager = this.themeManager;
     this.ui = new UIManager();
+    window.uiManager = this.ui;
     this.scoreSystem = new ScoreSystem();
     this.characterAnim = new CharacterAnimationManager({
       getElapsedRatio: () => this._getElapsedRatio(),
@@ -1161,6 +1530,22 @@ class GameManager {
     this.wasCaught = false;
     this._overlayTimeoutId = null;
 
+    this.langManager.onChange((lang) => {
+      this.themeManager.updateTitle();
+      this.ui.onLanguageChange();
+      if (this.leaderboard.modal?.open) {
+        this.leaderboard.render(this.leaderboard.load());
+      }
+      if (this.preloader) {
+        const startBtn = document.getElementById('start-btn');
+        const statusEl = document.getElementById('preload-status');
+        if (this.preloader.isDone) {
+          if (statusEl) statusEl.textContent = this.langManager.get('preloadComplete');
+          if (startBtn) startBtn.textContent = this.langManager.get('startBtn');
+        }
+      }
+    });
+
     this._initPreloader();
     this._bindEvents();
     this.ui.showScreen('start');
@@ -1173,27 +1558,31 @@ class GameManager {
     const statusEl = document.getElementById('preload-status');
     const container = document.getElementById('preload-container');
 
+    const loadingText = this.langManager ? this.langManager.get('preloadLoading') : '資源載入中...';
     if (startBtn) {
       startBtn.disabled = true;
-      startBtn.textContent = '資源載入中...';
+      startBtn.textContent = loadingText;
     }
 
     this.preloader = new AssetPreloader({
       onProgress: (ratio, loaded, total) => {
         const percent = Math.round(ratio * 100);
         if (fillEl) fillEl.style.width = percent + '%';
-        if (statusEl) statusEl.textContent = `資源載入中... ${percent}% (${loaded}/${total})`;
+        const loadTxt = this.langManager ? this.langManager.get('preloadLoading') : '資源載入中...';
+        if (statusEl) statusEl.textContent = `${loadTxt} ${percent}% (${loaded}/${total})`;
         if (startBtn && !this.preloader.isDone) {
           startBtn.disabled = true;
-          startBtn.textContent = `資源載入中 (${percent}%)`;
+          startBtn.textContent = `${loadTxt} (${percent}%)`;
         }
       },
       onComplete: () => {
         if (fillEl) fillEl.style.width = '100%';
-        if (statusEl) statusEl.textContent = '素材載入完成，隨時可開始！';
+        const completeTxt = this.langManager ? this.langManager.get('preloadComplete') : '素材載入完成，隨時可開始！';
+        const startTxt = this.langManager ? this.langManager.get('startBtn') : '開始遊戲';
+        if (statusEl) statusEl.textContent = completeTxt;
         if (startBtn) {
           startBtn.disabled = false;
-          startBtn.textContent = '開始遊戲';
+          startBtn.textContent = startTxt;
         }
         setTimeout(() => {
           container?.classList.add('is-hidden');
@@ -1222,11 +1611,43 @@ class GameManager {
     document.getElementById('close-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.close());
     document.getElementById('clear-leaderboard-btn')?.addEventListener('click', () => this.leaderboard.clear());
 
+    document.getElementById('rules-btn')?.addEventListener('click', () => this.ui.openRules());
+    document.getElementById('close-rules-btn')?.addEventListener('click', () => this.ui.closeRules());
+    this.ui.rulesModal?.addEventListener('click', (e) => {
+      if (e.target === this.ui.rulesModal) {
+        this.ui.closeRules();
+      }
+    });
+
+    const helpContainer = document.getElementById('gameplay-help-container');
+    if (helpContainer) {
+      helpContainer.addEventListener('pointerdown', (e) => e.stopPropagation());
+      helpContainer.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    document.getElementById('ending-overlay')?.addEventListener('click', (e) => {
+      if (
+        e.target.closest('#theme-toggle-btn') ||
+        e.target.closest('#lang-toggle-btn') ||
+        e.target.closest('#gameplay-help-container')
+      ) return;
+      if (this.gamePhase === 'ending') {
+        this._clearOverlayTimer();
+        this._endGame(this.wasCaught);
+      }
+    });
+
     const gameScreen = document.getElementById('game-screen');
     if (gameScreen) {
       gameScreen.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         if (this.gamePhase !== 'playing') return;
+
+        // 限定只有遊戲畫面（office-scene）或 KISS 按鈕才可以按來觸發 kiss，點擊 HUD/Boss 狀態 bar 不觸發
+        const isKissArea = e.target.closest('#office-scene') || e.target.closest('#kiss-btn');
+        if (!isKissArea) return;
+        if (e.target.closest('#gameplay-help-container')) return;
+
         e.preventDefault();
         try {
           gameScreen.setPointerCapture(e.pointerId);
@@ -1388,11 +1809,92 @@ class GameManager {
 }
 
 /* =============================================================================
+ * GAME SCENE SCALER — responsive scale-to-fit for mobile
+ * ============================================================================= */
+
+class GameSceneScaler {
+  constructor() {
+    this.scene = document.getElementById('office-scene');
+    this.gameScreen = document.getElementById('game-screen');
+    this.designWidth = 960; // px — the width the scene layout was designed for
+
+    this._onResize = this._onResize.bind(this);
+    window.addEventListener('resize', this._onResize);
+
+    // Also handle orientation change on mobile
+    window.addEventListener('orientationchange', () => {
+      setTimeout(this._onResize, 150);
+    });
+  }
+
+  apply() {
+    this._onResize();
+  }
+
+  _onResize() {
+    if (!this.scene) return;
+    const containerWidth = this.scene.parentElement?.clientWidth
+      || this.gameScreen?.clientWidth
+      || window.innerWidth;
+
+    const scale = Math.min(1, containerWidth / this.designWidth);
+
+    if (scale < 1) {
+      this.scene.style.transform = `scale(${scale})`;
+      this.scene.style.transformOrigin = 'top left';
+      this.scene.style.width = `${this.designWidth}px`;
+      this.scene.style.height = `620px`;
+      // Adjust container height to match scaled height
+      this.scene.style.marginBottom = `${-(620 * (1 - scale)) + 12}px`;
+    } else {
+      this.scene.style.transform = '';
+      this.scene.style.transformOrigin = '';
+      this.scene.style.width = '';
+      this.scene.style.height = '';
+      this.scene.style.marginBottom = '';
+    }
+  }
+}
+
+/* =============================================================================
+ * IMAGE PROTECTION — prevent saving / downloading game images
+ * ============================================================================= */
+
+function initImageProtection() {
+  // Block right-click context menu on images
+  document.addEventListener('contextmenu', (e) => {
+    if (e.target.tagName === 'IMG' || e.target.closest('.office-scene') || e.target.closest('.ending-overlay')) {
+      e.preventDefault();
+    }
+  });
+
+  // Block drag on all images
+  document.addEventListener('dragstart', (e) => {
+    if (e.target.tagName === 'IMG') {
+      e.preventDefault();
+    }
+  });
+}
+
+/* =============================================================================
  * BOOT
  * ============================================================================= */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Image protection
+  initImageProtection();
+
+  // Game scene responsive scaler
+  window.gameSceneScaler = new GameSceneScaler();
+
+  // Boot game
   window.gameManager = new GameManager();
+
+  // Apply scene scaling after first render
+  requestAnimationFrame(() => {
+    window.gameSceneScaler.apply();
+  });
+
   console.log('[Office Affair] Phase 1 prototype loaded.');
   console.log('[Office Affair] Kiss speed at hold count 0:', getKissSpeedMultiplier(0));
   console.log('[Office Affair] Kiss speed at hold count 31:', getKissSpeedMultiplier(31));
