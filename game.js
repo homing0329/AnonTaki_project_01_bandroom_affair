@@ -9,7 +9,7 @@
 
 const GAME_CONFIG = {
   gameDuration: 90,
-  goodEndMinScore: 70,
+  goodEndMinScore: 800,
 
   bossStates: {
     IDLE: 'IDLE',
@@ -24,19 +24,19 @@ const GAME_CONFIG = {
   },
 
   bossTiming: {
-    idlePoseCountMin: 2,
-    idlePoseCountMax: 7,
-    idleFrameMin: 700,
-    idleFrameMax: 2500,
+    idlePoseCountMin: 4,
+    idlePoseCountMax: 8,
+    idleFrameMin: 800,
+    idleFrameMax: 2000,
     preparePhases: [
-      { afterElapsedRatio: 0, min: 700, max: 1500 },
-      { afterElapsedRatio: 1 / 3, min: 500, max: 1100 },
-      { afterElapsedRatio: 2 / 3, min: 300, max: 800 },
+      { afterElapsedRatio: 0, min: 800, max: 1500 },
+      { afterElapsedRatio: 1 / 3, min: 600, max: 1100 },
+      { afterElapsedRatio: 2 / 3, min: 500, max: 900 },
     ],
-    lookingPoseCountMin: 1,
-    lookingPoseCountMax: 4,
-    lookingFrameMin: 1000,
-    lookingFrameMax: 2000,
+    lookingPoseCountMin: 2,
+    lookingPoseCountMax: 6,
+    lookingFrameMin: 800,
+    lookingFrameMax: 1700,
   },
 
   coupleTiming: {
@@ -50,11 +50,11 @@ const GAME_CONFIG = {
   // Speed tiers use kisses in the CURRENT hold, not total score.
   // Release the button to reset back to the first tier.
   speedTiers: [
-    { minScore: 0, maxScore: 10, multiplier: 4.0 },
-    { minScore: 11, maxScore: 23, multiplier: 7 },
-    { minScore: 24, maxScore: 42, multiplier: 10 },
-    { minScore: 43, maxScore: 64, multiplier: 14 },
-    { minScore: 65, maxScore: Infinity, multiplier: 20 },
+    { minScore: 0, maxScore: 6, multiplier: 4.0, scoreMult: 1 },
+    { minScore: 7, maxScore: 12, multiplier: 6, scoreMult: 2 },
+    { minScore: 13, maxScore: 18, multiplier: 8, scoreMult: 3 },
+    { minScore: 19, maxScore: 24, multiplier: 11, scoreMult: 4 },
+    { minScore: 25, maxScore: Infinity, multiplier: 14, scoreMult: 5 },
   ],
 
   caught: {
@@ -123,6 +123,23 @@ function randomMs(min, max) {
   return randomInt(min, max);
 }
 
+function randomBimodalMs(min, max) {
+  if (min >= max) return min;
+  const roll = Math.random();
+  const range = max - min;
+
+  if (roll < 0.4) {
+    // 40% 機率：偏快 (前 33% 區間)
+    return Math.floor(min + Math.random() * (range * 0.33));
+  } else if (roll < 0.6) {
+    // 20% 機率：中等過渡 (中間 34% 區間，保留自然過渡)
+    return Math.floor(min + range * 0.33 + Math.random() * (range * 0.34));
+  } else {
+    // 40% 機率：偏慢 (後 33% 區間)
+    return Math.floor(max - Math.random() * (range * 0.33));
+  }
+}
+
 function getPrepareDurationMs(elapsedRatio) {
   const phases = GAME_CONFIG.bossTiming.preparePhases;
   let phase = phases[0];
@@ -140,14 +157,22 @@ function pickRandom(list, exclude) {
 }
 
 /* =============================================================================
- * SPEED TIER (standalone function — ready for Kiss System)
+ * SPEED & SCORE TIERS
  * ============================================================================= */
 
-function getKissSpeedMultiplier(holdKissCount) {
+function getKissTier(holdKissCount) {
   const tier = GAME_CONFIG.speedTiers.find(
     (t) => holdKissCount >= t.minScore && holdKissCount <= t.maxScore
   );
-  return tier ? tier.multiplier : 1.0;
+  return tier || GAME_CONFIG.speedTiers[0];
+}
+
+function getKissSpeedMultiplier(holdKissCount) {
+  return getKissTier(holdKissCount).multiplier;
+}
+
+function getKissScoreMultiplier(holdKissCount) {
+  return getKissTier(holdKissCount).scoreMult || 1;
 }
 
 /* =============================================================================
@@ -167,19 +192,31 @@ function determineEnding(wasCaught, score) {
 class ScoreSystem {
   constructor() {
     this.score = 0;
+    this.kissCount = 0;
   }
 
   reset() {
     this.score = 0;
+    this.kissCount = 0;
   }
 
+  // 每一輪親吻分數不用一同顯示親吻次數：只增加親吻次數，分數維持不變
   addKiss() {
-    this.score += 1;
-    return this.score;
+    this.kissCount += 1;
+    return { score: this.score, kissCount: this.kissCount };
+  }
+
+  addBonusScore(points) {
+    this.score += points;
+    return { score: this.score, kissCount: this.kissCount };
   }
 
   getScore() {
     return this.score;
+  }
+
+  getKissCount() {
+    return this.kissCount;
   }
 }
 
@@ -486,7 +523,7 @@ class CharacterAnimationManager {
     const frame = pickRandom(frames, this._lastBCIdle);
     this._lastBCIdle = frame;
     this.setBCImage(frame);
-    return randomMs(
+    return randomBimodalMs(
       GAME_CONFIG.bossTiming.idleFrameMin,
       GAME_CONFIG.bossTiming.idleFrameMax
     );
@@ -503,7 +540,7 @@ class CharacterAnimationManager {
     const frame = pickRandom(frames, this._lastBCLooking);
     this._lastBCLooking = frame;
     this.setBCImage(frame);
-    return randomMs(
+    return randomBimodalMs(
       GAME_CONFIG.bossTiming.lookingFrameMin,
       GAME_CONFIG.bossTiming.lookingFrameMax
     );
@@ -670,13 +707,15 @@ class CharacterAnimationManager {
  * ============================================================================= */
 
 class KissSystem {
-  constructor(scoreSystem, characterAnim, onScoreChange) {
+  constructor(scoreSystem, characterAnim, onScoreChange, scorePopup) {
     this.scoreSystem = scoreSystem;
     this.characterAnim = characterAnim;
     this.onScoreChange = onScoreChange;
+    this.scorePopup = scorePopup;
 
     this.isKissing = false;
     this.holdKissCount = 0;
+    this.pendingBonus = 0;
     this._cycleTimeoutId = null;
   }
 
@@ -687,7 +726,7 @@ class KissSystem {
    * ARGUING → KISSING
    *
    * 每完成一個完整 Kiss Cycle：
-   * score + 1
+   * score + 1（先顯示每次親吻次數*1的分數）
    *
    * Cycle 完成後會自動開始下一個 Cycle。
    */
@@ -710,17 +749,6 @@ class KissSystem {
 
   /**
    * Schedule one Kiss Cycle.
-   *
-   * 實際 cycle 時間：
-   *
-   * kissCycleDuration / speedMultiplier
-   *
-   * 例如：
-   * 1000ms / 1.0  = 1000ms
-   * 1000ms / 1.25 = 800ms
-   * 1000ms / 1.5  = 666.67ms
-   * 1000ms / 1.75 = 571.43ms
-   * 1000ms / 2.0  = 500ms
    */
   _scheduleNextCycle() {
     if (!this.isKissing) return;
@@ -747,12 +775,17 @@ class KissSystem {
           this.characterAnim.showDEBreath();
         }
 
-        const newScore =
-          this.scoreSystem.addKiss();
+        // 每一輪親吻分數不用一同顯示親吻次數：只增加親吻次數，分數不變
+        const scoreData = this.scoreSystem.addKiss();
+
+        // Show live kiss counter above DE
+        if (this.scorePopup) {
+          this.scorePopup.showKissCounter(this.holdKissCount);
+        }
 
         // 通知 GameManager / UI 更新 HUD
         if (this.onScoreChange) {
-          this.onScoreChange(newScore);
+          this.onScoreChange(scoreData);
         }
       }
 
@@ -767,12 +800,14 @@ class KissSystem {
    *
    * 玩家放開 KISS：
    * KISSING → ARGUING
-   *
-   * 尚未完成的 cycle 不會計分。
    */
   stopKissing() {
     this.characterAnim.hideDEBreath();
     if (!this.isKissing) return;
+
+    const prevCount = this.holdKissCount;
+    const prevMult = getKissScoreMultiplier(prevCount);
+    const roundScore = prevCount * prevMult;
 
     this.isKissing = false;
     this.holdKissCount = 0;
@@ -785,9 +820,27 @@ class KissSystem {
     this.characterAnim.setCoupleState(
       GAME_CONFIG.coupleStates.ARGUING
     );
+
+    // Play combo merge animation above DE, then float to HUD score and stack score upon arrival
+    if (this.scorePopup && prevCount > 0) {
+      this.pendingBonus += roundScore;
+      this.scorePopup.playComboMerge(prevCount, prevMult, roundScore, (scoreToAdd) => {
+        if (this.pendingBonus >= scoreToAdd) {
+          this.pendingBonus -= scoreToAdd;
+          const updated = this.scoreSystem.addBonusScore(scoreToAdd);
+          if (this.onScoreChange) {
+            this.onScoreChange(updated);
+          }
+        }
+      });
+    }
   }
 
   freeze() {
+    const prevCount = this.holdKissCount;
+    const prevMult = getKissScoreMultiplier(prevCount);
+    const roundScore = prevCount * prevMult;
+
     this.isKissing = false;
     this.holdKissCount = 0;
 
@@ -797,14 +850,188 @@ class KissSystem {
     }
 
     this.characterAnim.hideDEBreath();
+
+    // Play combo merge even on freeze (caught)
+    if (this.scorePopup && prevCount > 0) {
+      this.pendingBonus += roundScore;
+      this.scorePopup.playComboMerge(prevCount, prevMult, roundScore, (scoreToAdd) => {
+        if (this.pendingBonus >= scoreToAdd) {
+          this.pendingBonus -= scoreToAdd;
+          const updated = this.scoreSystem.addBonusScore(scoreToAdd);
+          if (this.onScoreChange) {
+            this.onScoreChange(updated);
+          }
+        }
+      });
+    }
+  }
+
+  commitPendingScore() {
+    if (this.pendingBonus > 0) {
+      const toAdd = this.pendingBonus;
+      this.pendingBonus = 0;
+      const updated = this.scoreSystem.addBonusScore(toAdd);
+      if (this.onScoreChange) {
+        this.onScoreChange(updated);
+      }
+    }
   }
 
   reset() {
     this.stopKissing();
+    if (this.scorePopup) this.scorePopup.clear();
+    this.pendingBonus = 0;
   }
 
   getIsKissing() {
     return this.isKissing;
+  }
+}
+
+/* =============================================================================
+ * SCORE POPUP MANAGER — floating combo / score animation above DE
+ * ============================================================================= */
+
+class ScorePopupManager {
+  constructor() {
+    this.layer = document.getElementById('de-score-popup-layer');
+    this.hudScore = document.getElementById('hud-score');
+    this._currentCounterEl = null;
+    this._animTimeoutId = null;
+    this._flyTimeoutIds = [];
+  }
+
+  /** Clear all popups and pending animations */
+  clear() {
+    if (this._animTimeoutId) {
+      clearTimeout(this._animTimeoutId);
+      this._animTimeoutId = null;
+    }
+    if (this._flyTimeoutIds && this._flyTimeoutIds.length) {
+      this._flyTimeoutIds.forEach((id) => clearTimeout(id));
+      this._flyTimeoutIds = [];
+    }
+    if (this.hudScore) {
+      this.hudScore.classList.remove('hud__value--bump');
+    }
+    if (this.layer) this.layer.innerHTML = '';
+    this._currentCounterEl = null;
+    document.querySelectorAll('.de-score-fly').forEach((el) => el.remove());
+  }
+
+  /**
+   * Show or update the live kiss counter while player is holding.
+   * Called on every completed kiss cycle.
+   */
+  showKissCounter(holdKissCount) {
+    if (!this.layer) return;
+
+    // Remove previous counter (re-trigger animation)
+    if (this._currentCounterEl) {
+      this._currentCounterEl.remove();
+    }
+
+    const el = document.createElement('span');
+    el.className = 'de-kiss-counter';
+    el.textContent = holdKissCount;
+    this.layer.appendChild(el);
+    this._currentCounterEl = el;
+  }
+
+  /**
+   * On kiss release: play the combo merge sequence.
+   *
+   * 1. If scoreMult > 1: Show "count × mult" merge animation colliding into result pop
+   * 2. If scoreMult <= 1: Direct float
+   * 3. Float "+roundScore" up-left towards HUD score
+   * 4. When it arrives: bump HUD score and call onArrive callback to stack score
+   */
+  playComboMerge(holdKissCount, scoreMult, totalPoints, onArrive) {
+    if (!this.layer || holdKissCount <= 0) {
+      this.clear();
+      return;
+    }
+
+    // Step 0: remove live counter
+    if (this._currentCounterEl) {
+      this._currentCounterEl.remove();
+      this._currentCounterEl = null;
+    }
+
+    // Clear any stale popups in layer
+    this.layer.innerHTML = '';
+
+    // If multiplier is 1, skip merge animation, launch fly directly
+    if (scoreMult <= 1) {
+      this._launchFly(totalPoints, onArrive);
+      return;
+    }
+
+    // Step 1: combo merge "count × mult"
+    const mergeEl = document.createElement('span');
+    mergeEl.className = 'de-combo-merge';
+    mergeEl.innerHTML = `<span class="de-combo-merge__count">${holdKissCount}</span><span class="de-combo-merge__times">×</span><span class="de-combo-merge__mult">${scoreMult}</span>`;
+    this.layer.appendChild(mergeEl);
+
+    // Step 2: after 450ms, replace with result pop
+    this._animTimeoutId = setTimeout(() => {
+      mergeEl.remove();
+
+      const resultEl = document.createElement('span');
+      resultEl.className = 'de-combo-result';
+      resultEl.textContent = totalPoints;
+      this.layer.appendChild(resultEl);
+
+      // Step 3: after 350ms, replace with float-to-HUD
+      this._animTimeoutId = setTimeout(() => {
+        resultEl.remove();
+        this._launchFly(totalPoints, onArrive);
+      }, 350);
+    }, 450);
+  }
+
+  _launchFly(totalPoints, onArrive) {
+    const floatEl = document.createElement('div');
+    floatEl.className = 'de-score-fly';
+    floatEl.textContent = `+${totalPoints}`;
+
+    const layerRect = this.layer ? this.layer.getBoundingClientRect() : null;
+    const hudRect = this.hudScore ? this.hudScore.getBoundingClientRect() : null;
+
+    const startX = layerRect ? (layerRect.left + layerRect.width / 2) : (window.innerWidth * 0.75);
+    const startY = layerRect ? (layerRect.top + layerRect.height / 2) : (window.innerHeight * 0.55);
+
+    const targetX = hudRect ? (hudRect.left + hudRect.width / 2) : (startX - 350);
+    const targetY = hudRect ? (hudRect.top + hudRect.height / 2) : (startY - 280);
+
+    const deltaX = targetX - startX;
+    const deltaY = targetY - startY;
+
+    floatEl.style.left = `${startX}px`;
+    floatEl.style.top = `${startY}px`;
+    floatEl.style.setProperty('--fly-x', `${deltaX}px`);
+    floatEl.style.setProperty('--fly-y', `${deltaY}px`);
+
+    document.body.appendChild(floatEl);
+
+    // Flight duration matches CSS animation (800ms)
+    const flyTimeoutId = setTimeout(() => {
+      floatEl.remove();
+      this._bumpHudScore();
+      if (typeof onArrive === 'function') {
+        onArrive(totalPoints);
+      }
+    }, 800);
+    if (!this._flyTimeoutIds) this._flyTimeoutIds = [];
+    this._flyTimeoutIds.push(flyTimeoutId);
+  }
+
+  _bumpHudScore() {
+    if (!this.hudScore) return;
+    this.hudScore.classList.remove('hud__value--bump');
+    // Force reflow to re-trigger animation
+    void this.hudScore.offsetWidth;
+    this.hudScore.classList.add('hud__value--bump');
   }
 }
 
@@ -913,13 +1140,15 @@ const I18N = {
     rulesBtn: '遊戲玩法',
     viewLeaderboardBtn: '排行榜',
     playerHud: '玩家',
-    scoreHud: '親吻次數',
+    kissCountHud: '親吻次數',
+    scoreHud: '分數',
     timeHud: '時間',
     kissBtn: 'KISS',
     kissHint: '（按住）',
     gameOverTitle: '遊戲結束',
     endPlayerLabel: '玩家：',
-    endScoreLabel: '分數：',
+    endKissCountLabel: '親吻次數：',
+    endScoreLabel: '累積分數：',
     restartBtn: '再玩一次',
     leaderboardTitle: '排行榜',
     leaderboardEmpty: '尚無紀錄',
@@ -928,39 +1157,40 @@ const I18N = {
     clearPrompt: '請輸入密碼以清除排行榜：',
     passwordIncorrect: '密碼錯誤',
     defaultPlayerName: '無名氏',
+    exitGameBtn: '離開遊戲（返回開始畫面）',
     rulesTitle: '遊戲玩法說明',
     rulesHowTitle: '💋 如何接吻與得分',
-    rulesHowDesc: '按住畫面任意處或 KISS 按鈕，情侶 DE 即開始甜蜜接吻！只要按住不放，每完成一次接吻動作即獲得 1 分。',
-    rulesSpeedTitle: '⚡ 連鎖加速機制 (Speed Tiers)',
-    rulesSpeedDesc1: '在同一次長按中接吻次數越多，接吻速度會逐步加倍（4倍 → 7倍 → 10倍 → 14倍 → 20倍！）。',
+    rulesHowDesc: '按住畫面任意處或 KISS 按鈕，情侶 DE 即開始甜蜜接吻！只要按住不放，隨著連鎖次數增加將累積倍數；放開後數字將飄移至上方疊加成總分！',
+    rulesSpeedTitle: '⚡ 連鎖加速與倍數得分機制 (Speed & Score Multipliers)',
+    rulesSpeedDesc1: '在同一次長按中接吻次數越多，接吻速度與得分倍率同步加倍（最高達 5 倍加成！）。',
     rulesSpeedDesc2: '當速度達到 10 倍時，將觸發專屬深情喘氣特效！',
     rulesSpeedNote: '※ 只要放開手指或滑鼠，當輪累積次數歸零，下一次接吻速度重置回起始速度。',
-    rulesBossTitle: '👀 警戒狀態與老闆巡視',
-    rulesBossIdle: 'Boss Idle：老闆正常背對工作，請把握時間接吻累積高分！',
-    rulesBossPrep: 'Boss Preparing：老闆即將回頭，請隨時準備放開！',
-    rulesBossLook: 'Boss Looking：老闆已回頭盯著！此時絕對不可接吻，否則立即當場抓包！',
+    rulesBossTitle: '👀 觀察老闆與同事動作',
+    rulesBossIdle: '專心工作：老闆背對著辦公，請把握時間接吻累積次數！',
+    rulesBossPrep: '準備轉頭：老闆即將回頭（有轉身預兆動作），隨時準備放手！',
+    rulesBossLook: '回頭盯著：老闆已轉身盯著！此時絕對不可接吻，否則立即當場抓包！',
     rulesEndingTitle: '🏆 結局判定條件',
-    rulesEndingBad: 'BAD END：在老闆盯著看（Looking）時接吻被抓到。',
-    rulesEndingNormal: 'NORMAL END：時間結束存活，但得分未達 70 分。',
-    rulesEndingGood: 'GOOD END：時間結束存活，且親吻次數達到 70 分以上！',
+    rulesEndingBad: 'BAD END：在老闆回頭盯著時接吻被抓到。',
+    rulesEndingNormal: 'NORMAL END：時間結束存活，但累積分數未達 300 分。',
+    rulesEndingGood: 'GOOD END：時間結束存活，且累積分數達到 300 分以上！',
     tooltipHowTitle: '💋 如何接吻',
     tooltipHowDesc: '按住畫面任意處或 KISS 按鈕開始親吻，持續按住可累積接吻次數。',
     tooltipSpeedTitle: '⚡ 連鎖加速',
     tooltipSpeedDesc: '同一次按住越久速度越快（最高 20 倍）。達 10 倍速時觸發深情喘氣特效。放開則重置速度。',
-    tooltipBossTitle: '👀 避開老闆目光',
-    tooltipBossIdle: 'Boss Idle：安全工作，把握時間接吻！',
-    tooltipBossPrep: 'Boss Preparing：老闆準備回頭，隨時準備放開！',
-    tooltipBossLook: 'Boss Looking：老闆正在盯著！絕對不能親吻，否則當場抓包！',
+    tooltipBossTitle: '👀 觀察老闆動作',
+    tooltipBossIdle: '專心工作：安全辦公，把握時間接吻！',
+    tooltipBossPrep: '準備轉頭：老闆即將轉身，隨時準備放開！',
+    tooltipBossLook: '回頭盯著：老闆正在盯著！絕對不能接吻，否則當場抓包！',
     tooltipEndingTitle: '🏆 結局判定',
-    tooltipEndingBad: 'BAD END：接吻被抓包',
-    tooltipEndingNormal: 'NORMAL END：存活但未滿 70 分',
-    tooltipEndingGood: 'GOOD END：存活且達到 70 分以上',
+    tooltipEndingBad: 'BAD END：在老闆回頭時接吻被抓包',
+    tooltipEndingNormal: 'NORMAL END：存活但未滿 300 分',
+    tooltipEndingGood: 'GOOD END：存活且達到 300 分以上',
     bossWarningIdle: 'Boss Idle',
     bossWarningPrepare: '⚠ Boss Preparing!',
     bossWarningLooking: '👀 Boss Looking!',
     bossWarningCaught: 'Caught!',
     endingBad: '被老闆發現了！下次小心一點。',
-    endingNormal: '安全過關，但親吻次數還不夠多。',
+    endingNormal: '安全過關，但累積分數未達 300 分。',
     endingGood: '完美過關！你是辦公室情場高手！',
     preloadLoading: '資源載入中...',
     preloadComplete: '素材載入完成，隨時可開始！',
@@ -976,13 +1206,15 @@ const I18N = {
     rulesBtn: '游戏玩法',
     viewLeaderboardBtn: '排行榜',
     playerHud: '玩家',
-    scoreHud: '亲吻次数',
+    kissCountHud: '亲吻次数',
+    scoreHud: '分数',
     timeHud: '时间',
     kissBtn: 'KISS',
     kissHint: '（按住）',
     gameOverTitle: '游戏结束',
     endPlayerLabel: '玩家：',
-    endScoreLabel: '分数：',
+    endKissCountLabel: '亲吻次数：',
+    endScoreLabel: '累积分数：',
     restartBtn: '再玩一次',
     leaderboardTitle: '排行榜',
     leaderboardEmpty: '暂无记录',
@@ -991,39 +1223,40 @@ const I18N = {
     clearPrompt: '请输入密码以清除排行榜：',
     passwordIncorrect: '密码错误',
     defaultPlayerName: '无名氏',
+    exitGameBtn: '离开游戏（返回开始画面）',
     rulesTitle: '游戏玩法说明',
     rulesHowTitle: '💋 如何接吻与得分',
-    rulesHowDesc: '按住画面任意处或 KISS 按钮，情侣 DE 即开始甜蜜接吻！只要按住不放，每完成一次接吻动作即获得 1 分。',
-    rulesSpeedTitle: '⚡ 连锁加速机制 (Speed Tiers)',
-    rulesSpeedDesc1: '在同一次长按中接吻次数越多，接吻速度会逐步加倍（4倍 → 7倍 → 10倍 → 14倍 → 20倍！）。',
+    rulesHowDesc: '按住画面任意处或 KISS 按钮，情侣 DE 即开始甜蜜接吻！只要按住不放，随着连锁次数增加将累积倍数；放开后数字将飘移至上方叠加成总分！',
+    rulesSpeedTitle: '⚡ 连锁加速与倍数得分机制 (Speed & Score Multipliers)',
+    rulesSpeedDesc1: '在同一次长按中接吻次数越多，接吻速度与得分倍率同步加倍（最高达 5 倍加成！）。',
     rulesSpeedDesc2: '当速度达到 10 倍时，将触发专属深情喘气特效！',
     rulesSpeedNote: '※ 只要放开手指或鼠标，当轮累积次数归零，下一次接吻速度重置回起始速度。',
-    rulesBossTitle: '👀 警戒状态与老板巡视',
-    rulesBossIdle: 'Boss Idle：老板正常背对工作，请把握时间接吻累积高分！',
-    rulesBossPrep: 'Boss Preparing：老板即将回头，请随时准备放开！',
-    rulesBossLook: 'Boss Looking：老板已回头盯着！此时绝对不可接吻，否则立即当场抓包！',
+    rulesBossTitle: '👀 观察老板与同事动作',
+    rulesBossIdle: '专心工作：老板背对着办公，请把握时间接吻累积次数！',
+    rulesBossPrep: '准备回头：老板即将回头（有转身预兆动作），随时准备放手！',
+    rulesBossLook: '回头盯着：老板已转身盯着！此时绝对不可接吻，否则立即当场抓包！',
     rulesEndingTitle: '🏆 结局判定条件',
-    rulesEndingBad: 'BAD END：在老板盯着看（Looking）时接吻被抓到。',
-    rulesEndingNormal: 'NORMAL END：时间结束存活，但得分未达 70 分。',
-    rulesEndingGood: 'GOOD END：时间结束存活，且亲吻次数达到 70 分以上！',
+    rulesEndingBad: 'BAD END：在老板回头盯着时接吻被抓到。',
+    rulesEndingNormal: 'NORMAL END：时间结束存活，但累积分数未达 300 分。',
+    rulesEndingGood: 'GOOD END：时间结束存活，且累积分数达到 300 分以上！',
     tooltipHowTitle: '💋 如何接吻',
     tooltipHowDesc: '按住画面任意处或 KISS 按钮开始亲吻，持续按住可累积接吻次数。',
     tooltipSpeedTitle: '⚡ 连锁加速',
     tooltipSpeedDesc: '同一次按住越久速度越快（最高 20 倍）。达 10 倍速时触发深情喘气特效。放开则重置速度。',
-    tooltipBossTitle: '👀 避开老板目光',
-    tooltipBossIdle: 'Boss Idle：安全工作，把握时间接吻！',
-    tooltipBossPrep: 'Boss Preparing：老板准备回头，随时准备放开！',
-    tooltipBossLook: 'Boss Looking：老板正在盯着！绝对不能亲吻，否则当场抓包！',
+    tooltipBossTitle: '👀 观察老板动作',
+    tooltipBossIdle: '专心工作：安全办公，把握时间接吻！',
+    tooltipBossPrep: '准备回头：老板即将转身，随时准备放开！',
+    tooltipBossLook: '回头盯着：老板正在盯着！绝对不能接吻，否则当场抓包！',
     tooltipEndingTitle: '🏆 结局判定',
-    tooltipEndingBad: 'BAD END：接吻被抓包',
-    tooltipEndingNormal: 'NORMAL END：存活但未满 70 分',
-    tooltipEndingGood: 'GOOD END：存活且达到 70 分以上',
+    tooltipEndingBad: 'BAD END：在老板回头时接吻被抓包',
+    tooltipEndingNormal: 'NORMAL END：存活但未满 300 分',
+    tooltipEndingGood: 'GOOD END：存活且达到 300 分以上',
     bossWarningIdle: 'Boss Idle',
     bossWarningPrepare: '⚠ Boss Preparing!',
     bossWarningLooking: '👀 Boss Looking!',
     bossWarningCaught: 'Caught!',
     endingBad: '被老板发现了！下次小心一点。',
-    endingNormal: '安全过关，但亲吻次数还不够多。',
+    endingNormal: '安全过关，但累积分数未达 300 分。',
     endingGood: '完美过关！你是办公室情场高手！',
     preloadLoading: '资源加载中...',
     preloadComplete: '素材加载完成，随时可开始！',
@@ -1039,13 +1272,15 @@ const I18N = {
     rulesBtn: 'How to Play',
     viewLeaderboardBtn: 'Leaderboard',
     playerHud: 'Player',
-    scoreHud: 'Kiss Count',
+    kissCountHud: 'Kiss Count',
+    scoreHud: 'Score',
     timeHud: 'Time',
     kissBtn: 'KISS',
     kissHint: ' (Hold)',
     gameOverTitle: 'Game Over',
     endPlayerLabel: 'Player: ',
-    endScoreLabel: 'Score: ',
+    endKissCountLabel: 'Kiss Count: ',
+    endScoreLabel: 'Total Score: ',
     restartBtn: 'Play Again',
     leaderboardTitle: 'Leaderboard',
     leaderboardEmpty: 'No records yet',
@@ -1054,39 +1289,40 @@ const I18N = {
     clearPrompt: 'Enter password to clear leaderboard:',
     passwordIncorrect: 'Incorrect password',
     defaultPlayerName: 'Anonymous',
+    exitGameBtn: 'Exit Game (Return to Menu)',
     rulesTitle: 'How to Play',
     rulesHowTitle: '💋 How to Kiss & Score',
-    rulesHowDesc: 'Hold anywhere on the screen or press and hold KISS to start kissing! For every completed kiss motion while holding, you earn 1 point.',
-    rulesSpeedTitle: '⚡ Combo Speed Tiers',
-    rulesSpeedDesc1: 'The longer you continuously hold and kiss, the faster they go (4x → 7x → 10x → 14x → 20x!).',
+    rulesHowDesc: 'Hold anywhere on the screen or press and hold KISS to kiss! Build up combos while holding; upon release the score floats up to stack into your total score!',
+    rulesSpeedTitle: '⚡ Speed & Score Multipliers',
+    rulesSpeedDesc1: 'The longer you continuously hold and kiss, the faster you kiss and the higher your score multiplier (up to 5x points!).',
     rulesSpeedDesc2: 'Reaching 10x speed triggers an exclusive steamy breath effect!',
     rulesSpeedNote: '* Releasing your finger or mouse resets your current hold streak and returns kiss speed to start.',
-    rulesBossTitle: '👀 Boss Alert States',
-    rulesBossIdle: 'Boss Idle: Boss is working with back turned. Kiss now to rack up points!',
-    rulesBossPrep: 'Boss Preparing: Boss is about to turn around. Get ready to release!',
-    rulesBossLook: 'Boss Looking: Boss is watching! Do NOT kiss, or you will get busted!',
+    rulesBossTitle: '👀 Watch the Boss',
+    rulesBossIdle: 'Working: Boss is facing away working. Kiss now to build up combos!',
+    rulesBossPrep: 'Turning: Boss is about to turn around. Get ready to release!',
+    rulesBossLook: 'Watching: Boss is watching directly! Do NOT kiss, or you will get busted!',
     rulesEndingTitle: '🏆 Ending Conditions',
-    rulesEndingBad: 'BAD END: Caught kissing while the boss is looking.',
-    rulesEndingNormal: 'NORMAL END: Survived until time out, but scored under 70 points.',
-    rulesEndingGood: 'GOOD END: Survived until time out and scored 70 points or higher!',
+    rulesEndingBad: 'BAD END: Caught kissing while the boss is watching.',
+    rulesEndingNormal: 'NORMAL END: Survived until time out, but scored under 300 points.',
+    rulesEndingGood: 'GOOD END: Survived until time out and scored 300 points or higher!',
     tooltipHowTitle: '💋 How to Kiss',
     tooltipHowDesc: 'Hold anywhere or press KISS to start kissing. Continuous hold racks up kisses.',
     tooltipSpeedTitle: '⚡ Combo Speed',
     tooltipSpeedDesc: 'Longer continuous hold = faster kissing (up to 20x). 10x triggers breath effect. Releasing resets speed.',
-    tooltipBossTitle: '👀 Watch Out for Boss',
-    tooltipBossIdle: 'Boss Idle: Safe to kiss! Rack up your score.',
-    tooltipBossPrep: 'Boss Preparing: Boss is turning, get ready to stop!',
-    tooltipBossLook: 'Boss Looking: Boss is watching! Stop kissing immediately!',
+    tooltipBossTitle: '👀 Watch the Boss',
+    tooltipBossIdle: 'Working: Safe to kiss! Rack up combos.',
+    tooltipBossPrep: 'Turning: Boss is turning, get ready to release!',
+    tooltipBossLook: 'Watching: Boss is watching! Stop kissing immediately!',
     tooltipEndingTitle: '🏆 Endings',
-    tooltipEndingBad: 'BAD END: Caught kissing',
-    tooltipEndingNormal: 'NORMAL END: Survived, < 70 pts',
-    tooltipEndingGood: 'GOOD END: Survived, ≥ 70 pts',
+    tooltipEndingBad: 'BAD END: Caught kissing while boss is watching',
+    tooltipEndingNormal: 'NORMAL END: Survived, < 300 pts',
+    tooltipEndingGood: 'GOOD END: Survived, ≥ 300 pts',
     bossWarningIdle: 'Boss Idle',
     bossWarningPrepare: '⚠ Boss Preparing!',
     bossWarningLooking: '👀 Boss Looking!',
     bossWarningCaught: 'Caught!',
     endingBad: 'Caught by the boss! Be more careful next time.',
-    endingNormal: 'Made it through safely, but not enough kisses.',
+    endingNormal: 'Made it through safely, but score is under 300.',
     endingGood: 'Perfect run! You are a master of office romance!',
     preloadLoading: 'Loading assets...',
     preloadComplete: 'Assets loaded, ready to play!',
@@ -1220,6 +1456,130 @@ class LanguageManager {
 }
 
 /* =============================================================================
+ * END PANEL CONTROLLER — Draggable & Collapsible settlement window
+ * ============================================================================= */
+
+class EndPanelController {
+  constructor() {
+    this.panel = document.getElementById('end-panel');
+    this.header = document.getElementById('end-panel-header');
+    this.collapseBtn = document.getElementById('end-collapse-btn');
+    this.collapseIcon = document.getElementById('end-collapse-icon');
+    this.content = document.getElementById('end-panel-content');
+
+    this.isCollapsed = false;
+    this.currentX = 0;
+    this.currentY = 0;
+    this.isDragging = false;
+    this.startX = 0;
+    this.startY = 0;
+    this.initialX = 0;
+    this.initialY = 0;
+    this.dragDistance = 0;
+
+    this._bind();
+  }
+
+  reset() {
+    this.isCollapsed = false;
+    this.currentX = 0;
+    this.currentY = 0;
+    if (this.panel) {
+      this.panel.classList.remove('panel--end--collapsed');
+      this.panel.classList.remove('is-dragging');
+      this.panel.style.transform = '';
+    }
+    if (this.collapseIcon) {
+      this.collapseIcon.textContent = '−';
+    }
+  }
+
+  toggleCollapse() {
+    this.isCollapsed = !this.isCollapsed;
+    if (this.panel) {
+      this.panel.classList.toggle('panel--end--collapsed', this.isCollapsed);
+    }
+    if (this.collapseIcon) {
+      this.collapseIcon.textContent = this.isCollapsed ? '+' : '−';
+    }
+  }
+
+  _bind() {
+    if (!this.panel) return;
+
+    // Toggle collapse button click
+    this.collapseBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleCollapse();
+    });
+
+    // If collapsed, clicking anywhere on the mini pill expands it (unless it was a drag)
+    this.panel.addEventListener('click', (e) => {
+      if (this.isCollapsed && this.dragDistance < 6) {
+        if (!e.target.closest('button')) {
+          this.toggleCollapse();
+        }
+      }
+    });
+
+    // Draggable functionality via Pointer Events
+    const onPointerDown = (e) => {
+      if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input')) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+      this.isDragging = true;
+      this.dragDistance = 0;
+      this.startX = e.clientX;
+      this.startY = e.clientY;
+      this.initialX = this.currentX;
+      this.initialY = this.currentY;
+
+      try {
+        this.panel.setPointerCapture(e.pointerId);
+      } catch (err) { }
+
+      this.panel.classList.add('is-dragging');
+    };
+
+    const onPointerMove = (e) => {
+      if (!this.isDragging) return;
+      const deltaX = e.clientX - this.startX;
+      const deltaY = e.clientY - this.startY;
+      this.dragDistance = Math.hypot(deltaX, deltaY);
+
+      // Clamp within viewport
+      const rect = this.panel.getBoundingClientRect();
+      const maxOffsetX = Math.max(20, (window.innerWidth - rect.width) / 2 + rect.width * 0.35);
+      const maxOffsetY = Math.max(20, (window.innerHeight - rect.height) / 2 + rect.height * 0.35);
+
+      let nextX = this.initialX + deltaX;
+      let nextY = this.initialY + deltaY;
+
+      nextX = Math.max(-maxOffsetX, Math.min(maxOffsetX, nextX));
+      nextY = Math.max(-maxOffsetY, Math.min(maxOffsetY, nextY));
+
+      this.currentX = nextX;
+      this.currentY = nextY;
+      this.panel.style.transform = `translate3d(${nextX}px, ${nextY}px, 0)`;
+    };
+
+    const onPointerUp = (e) => {
+      if (!this.isDragging) return;
+      this.isDragging = false;
+      this.panel.classList.remove('is-dragging');
+      if (this.panel.hasPointerCapture?.(e.pointerId)) {
+        this.panel.releasePointerCapture(e.pointerId);
+      }
+    };
+
+    this.panel.addEventListener('pointerdown', onPointerDown);
+    this.panel.addEventListener('pointermove', onPointerMove);
+    this.panel.addEventListener('pointerup', onPointerUp);
+    this.panel.addEventListener('pointercancel', onPointerUp);
+  }
+}
+
+/* =============================================================================
  * UI MANAGER
  * ============================================================================= */
 
@@ -1232,6 +1592,7 @@ class UIManager {
     };
     this.hud = {
       playerName: document.getElementById('hud-player-name'),
+      kissCount: document.getElementById('hud-kiss-count'),
       score: document.getElementById('hud-score'),
       timer: document.getElementById('hud-timer'),
     };
@@ -1245,6 +1606,7 @@ class UIManager {
     this.rulesModal = document.getElementById('rules-modal');
     this.lastBossState = 'IDLE';
     this.lastEndData = null;
+    this.endPanelController = new EndPanelController();
   }
 
   showScreen(name) {
@@ -1266,10 +1628,11 @@ class UIManager {
     this.rulesModal?.close();
   }
 
-  updateHUD({ playerName, score, timer }) {
-    if (playerName !== undefined) this.hud.playerName.textContent = playerName;
-    if (score !== undefined) this.hud.score.textContent = score;
-    if (timer !== undefined) this.hud.timer.textContent = timer;
+  updateHUD({ playerName, score, kissCount, timer }) {
+    if (playerName !== undefined && this.hud.playerName) this.hud.playerName.textContent = playerName;
+    if (kissCount !== undefined && this.hud.kissCount) this.hud.kissCount.textContent = kissCount;
+    if (score !== undefined && this.hud.score) this.hud.score.textContent = score;
+    if (timer !== undefined && this.hud.timer) this.hud.timer.textContent = timer;
   }
 
   updateBossWarning(state) {
@@ -1303,12 +1666,17 @@ class UIManager {
     this.kissBtn?.classList.toggle('is-active', active);
   }
 
-  showEndScreen({ playerName, score, ending }) {
-    this.lastEndData = { playerName, score, ending };
+  showEndScreen({ playerName, score, kissCount, ending }) {
+    this.lastEndData = { playerName, score, kissCount, ending };
     document.getElementById('end-title').textContent = ending;
     document.getElementById('end-message').textContent = getEndingMessage(ending);
     document.getElementById('end-player-name').textContent = playerName;
     document.getElementById('end-score').textContent = score;
+    const endKissEl = document.getElementById('end-kiss-count');
+    if (endKissEl && kissCount !== undefined) {
+      endKissEl.textContent = kissCount;
+    }
+    this.endPanelController?.reset();
     this.showScreen('end');
   }
 
@@ -1505,15 +1873,21 @@ class GameManager {
     this.ui = new UIManager();
     window.uiManager = this.ui;
     this.scoreSystem = new ScoreSystem();
+    this.scorePopup = new ScorePopupManager();
     this.characterAnim = new CharacterAnimationManager({
       getElapsedRatio: () => this._getElapsedRatio(),
     });
     this.kissSystem = new KissSystem(
       this.scoreSystem,
       this.characterAnim,
-      (score) => {
-        this.ui.updateHUD({ score });
-      }
+      (scoreData) => {
+        if (typeof scoreData === 'object' && scoreData !== null) {
+          this.ui.updateHUD({ score: scoreData.score, kissCount: scoreData.kissCount });
+        } else {
+          this.ui.updateHUD({ score: scoreData });
+        }
+      },
+      this.scorePopup
     );
     this.leaderboard = new LeaderboardSystem();
 
@@ -1613,6 +1987,10 @@ class GameManager {
 
     document.getElementById('rules-btn')?.addEventListener('click', () => this.ui.openRules());
     document.getElementById('close-rules-btn')?.addEventListener('click', () => this.ui.closeRules());
+    document.getElementById('gameplay-exit-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.returnToMenu();
+    });
     this.ui.rulesModal?.addEventListener('click', (e) => {
       if (e.target === this.ui.rulesModal) {
         this.ui.closeRules();
@@ -1683,16 +2061,23 @@ class GameManager {
     this.kissSystem.reset();
     this.ui.hideEndingOverlay();
     this._clearOverlayTimer();
+
+    // 在切換畫面之前先重設 HUD 數值並移除跳動效果，確保全新一輪不會閃爍或跳動
+    this.ui.updateHUD({
+      playerName: this.playerName,
+      kissCount: 0,
+      score: 0,
+      timer: GAME_CONFIG.gameDuration,
+    });
+    if (this.kissSystem?.scorePopup?.hudScore) {
+      this.kissSystem.scorePopup.hudScore.classList.remove('hud__value--bump');
+    }
+
     this.characterAnim.start();
     this.bossStateMachine.reset();
     this.bossStateMachine.start();
 
     this.ui.showScreen('game');
-    this.ui.updateHUD({
-      playerName: this.playerName,
-      score: 0,
-      timer: GAME_CONFIG.gameDuration,
-    });
     this.ui.setKissButtonEnabled(true);
 
     this.timerSystem = new TimerSystem(
@@ -1755,6 +2140,8 @@ class GameManager {
     this.gamePhase = 'ending';
     this.wasCaught = caught;
 
+    this.kissSystem.commitPendingScore();
+
     const score = this.scoreSystem.getScore();
     this.ui.showEndingOverlay(this._endingImageSrc(caught, score));
     this._clearOverlayTimer();
@@ -1777,9 +2164,11 @@ class GameManager {
 
     this._clearOverlayTimer();
     this._freezePlay();
+    this.kissSystem.commitPendingScore();
     this.characterAnim.stop();
 
     const score = this.scoreSystem.getScore();
+    const kissCount = this.scoreSystem.getKissCount();
     const ending = determineEnding(caught, score);
 
     this.leaderboard.saveEntry({
@@ -1789,7 +2178,7 @@ class GameManager {
       date: new Date().toISOString(),
     });
 
-    this.ui.showEndScreen({ playerName: this.playerName, score, ending });
+    this.ui.showEndScreen({ playerName: this.playerName, score, kissCount, ending });
   }
 
   returnToMenu() {
@@ -1800,6 +2189,17 @@ class GameManager {
     this.bossStateMachine.stop();
     this.characterAnim.stop();
     this.kissSystem.reset();
+    this.scoreSystem.reset();
+    this.ui.endPanelController?.reset();
+    this.ui.updateHUD({
+      playerName: '',
+      kissCount: 0,
+      score: 0,
+      timer: GAME_CONFIG.gameDuration,
+    });
+    if (this.kissSystem?.scorePopup?.hudScore) {
+      this.kissSystem.scorePopup.hudScore.classList.remove('hud__value--bump');
+    }
     this.ui.setKissButtonEnabled(false);
     this.ui.clearPlayerNameInput();
     this.playerName = '';
@@ -1877,10 +2277,49 @@ function initImageProtection() {
 }
 
 /* =============================================================================
+ * MOBILE VIEWPORT LOCK — prevent pinch-to-zoom and double-tap zoom
+ * ============================================================================= */
+
+function initMobileViewportLock() {
+  // Prevent gesture zoom on iOS Safari (which ignores user-scalable=no)
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('gesturechange', (e) => e.preventDefault());
+  document.addEventListener('gestureend', (e) => e.preventDefault());
+
+  // Prevent multi-touch pinch zoom
+  document.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    },
+    { passive: false }
+  );
+
+  // Prevent fast double-tap zoom
+  let lastTouchEnd = 0;
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+      }
+      lastTouchEnd = now;
+    },
+    { passive: false }
+  );
+}
+
+/* =============================================================================
  * BOOT
  * ============================================================================= */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Lock mobile pinch/double-tap zoom
+  initMobileViewportLock();
+
   // Image protection
   initImageProtection();
 
