@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Office Affair</title>
   <link rel="stylesheet" href="style.css">
   <script>
@@ -79,16 +79,16 @@
           <span id="hud-player-name" class="hud__value">—</span>
         </div>
         <div class="hud__item">
-          <span class="hud__label" data-i18n="scoreHud">Kiss Count</span>
+          <span class="hud__label" data-i18n="kissCountHud">親吻次數</span>
+          <span id="hud-kiss-count" class="hud__value">0</span>
+        </div>
+        <div class="hud__item">
+          <span class="hud__label" data-i18n="scoreHud">分數</span>
           <span id="hud-score" class="hud__value">0</span>
         </div>
         <div class="hud__item">
           <span class="hud__label" data-i18n="timeHud">Time</span>
           <span id="hud-timer" class="hud__value">60</span>
-        </div>
-        <div id="boss-warning" class="boss-warning" aria-live="polite">
-          <span class="boss-warning__icon">!</span>
-          <span id="boss-warning-text" class="boss-warning__text">Boss Idle</span>
         </div>
       </header>
 
@@ -184,6 +184,8 @@
 
      
     </div>
+    <!-- Floating score popups above DE -->
+    <div id="de-score-popup-layer" class="de-score-popup-layer"></div>
   </div>
 
 </div>
@@ -210,16 +212,33 @@
 
     <!-- End Screen (placeholder) -->
     <section id="end-screen" class="screen">
-      <div class="panel panel--end">
-        <h2 id="end-title" class="title title--sm" data-i18n="gameOverTitle">Game Over</h2>
-        <p id="end-message" class="end-message">—</p>
-        <div class="end-stats">
-          <p><span data-i18n="endPlayerLabel">玩家：</span><span id="end-player-name">—</span></p>
-          <p><span data-i18n="endScoreLabel">分數：</span><span id="end-score">0</span></p>
+      <div id="end-panel" class="panel panel--end">
+        <div id="end-panel-header" class="panel--end__header">
+          <div class="panel--end__title-wrap">
+            <span class="panel--end__drag-handle" title="按住可拖動視窗" aria-hidden="true">⠿</span>
+            <h2 id="end-title" class="title title--sm" data-i18n="gameOverTitle">Game Over</h2>
+          </div>
+          <button
+            id="end-collapse-btn"
+            class="panel-collapse-btn"
+            type="button"
+            aria-label="收起或展開結算視窗"
+            title="收起 / 展開"
+          >
+            <span id="end-collapse-icon" class="collapse-icon">−</span>
+          </button>
         </div>
-        <div class="button-row">
-          <button id="restart-btn" class="btn btn--primary" data-i18n="restartBtn">再玩一次</button>
-          <button id="end-leaderboard-btn" class="btn btn--secondary" data-i18n="viewLeaderboardBtn">View Leaderboard</button>
+        <div id="end-panel-content" class="panel--end__content">
+          <p id="end-message" class="end-message">—</p>
+          <div class="end-stats">
+            <p><span data-i18n="endPlayerLabel">玩家：</span><span id="end-player-name">—</span></p>
+            <p><span data-i18n="endKissCountLabel">親吻次數：</span><span id="end-kiss-count">0</span></p>
+            <p><span data-i18n="endScoreLabel">累積分數：</span><span id="end-score">0</span></p>
+          </div>
+          <div class="button-row">
+            <button id="restart-btn" class="btn btn--primary" data-i18n="restartBtn">再玩一次</button>
+            <button id="end-leaderboard-btn" class="btn btn--secondary" data-i18n="viewLeaderboardBtn">View Leaderboard</button>
+          </div>
         </div>
       </div>
     </section>
@@ -247,68 +266,84 @@
           <div class="rules-body">
             <div class="rules-card">
               <h3 data-i18n="rulesHowTitle">💋 如何接吻與得分</h3>
-              <p data-i18n="rulesHowDesc">按住畫面任意處或 KISS 按鈕，情侶 DE 即開始甜蜜接吻！只要按住不放，每完成一次接吻動作即獲得 1 分。</p>
+              <p data-i18n="rulesHowDesc">按住畫面任意處或 KISS 按鈕，情侶 DE 即開始甜蜜接吻！只要按住不放，隨著連鎖次數增加將累積倍數；放開後數字將飄移至上方疊加成總分！</p>
             </div>
             <div class="rules-card">
-              <h3 data-i18n="rulesSpeedTitle">⚡ 連鎖加速機制 (Speed Tiers)</h3>
-              <p data-i18n="rulesSpeedDesc1">在同一次長按中接吻次數越多，接吻速度會逐步加倍（4倍 → 7倍 → 10倍 → 14倍 → 20倍！）。</p>
+              <h3 data-i18n="rulesSpeedTitle">⚡ 連鎖加速與倍數得分機制 (Speed & Score Multipliers)</h3>
+              <p data-i18n="rulesSpeedDesc1">在同一次長按中接吻次數越多，接吻速度與得分倍率同步加倍（最高達 5 倍加成！）。</p>
               <p data-i18n="rulesSpeedDesc2">當速度達到 10 倍時，將觸發專屬深情喘氣特效！</p>
               <p class="rules-note" data-i18n="rulesSpeedNote">※ 只要放開手指或滑鼠，當輪累積次數歸零，下一次接吻速度重置回起始速度。</p>
             </div>
             <div class="rules-card">
-              <h3 data-i18n="rulesBossTitle">👀 警戒狀態與老闆巡視</h3>
-              <p data-i18n="rulesBossIdle">Boss Idle：老闆正常背對工作，請把握時間接吻累積高分！</p>
-              <p data-i18n="rulesBossPrep">Boss Preparing：老闆即將回頭，請隨時準備放開！</p>
-              <p data-i18n="rulesBossLook">Boss Looking：老闆已回頭盯著！此時絕對不可接吻，否則立即當場抓包！</p>
+              <h3 data-i18n="rulesBossTitle">👀 觀察老闆與同事動作</h3>
+              <p data-i18n="rulesBossIdle">專心工作：老闆背對著辦公，把握時間接吻累積次數！</p>
+              <p data-i18n="rulesBossPrep">準備轉頭：老闆即將回頭（有轉身預兆動作），隨時準備放開！</p>
+              <p data-i18n="rulesBossLook">回頭盯著：老闆已回頭盯著！此時絕對不可接吻，否則立即當場抓包！</p>
             </div>
             <div class="rules-card">
               <h3 data-i18n="rulesEndingTitle">🏆 結局判定條件</h3>
-              <p data-i18n="rulesEndingBad">BAD END：在老闆盯著看（Looking）時接吻被抓到。</p>
-              <p data-i18n="rulesEndingNormal">NORMAL END：時間結束存活，但得分未達 70 分。</p>
-              <p data-i18n="rulesEndingGood">GOOD END：時間結束存活，且親吻次數達到 70 分以上！</p>
+              <p data-i18n="rulesEndingBad">BAD END：在老闆回頭盯著時接吻被抓到。</p>
+              <p data-i18n="rulesEndingNormal">NORMAL END：時間結束存活，但累積分數未達 300 分。</p>
+              <p data-i18n="rulesEndingGood">GOOD END：時間結束存活，且累積分數達到 300 分以上！</p>
             </div>
           </div>
         </div>
       </div>
     </dialog>
 
-    <!-- Gameplay Help Floating Tooltip (Bottom-Right, only active during gameplay) -->
+    <!-- Gameplay Floating Controls (Bottom-Right, only active during gameplay) -->
     <div id="gameplay-help-container" class="gameplay-help-container" hidden>
-      <div id="gameplay-tooltip" class="gameplay-tooltip" role="tooltip" aria-hidden="true">
-        <div class="gameplay-tooltip__header">
-          <span class="gameplay-tooltip__title" data-i18n="rulesTitle">📖 遊戲玩法說明</span>
+      <div class="gameplay-help-wrapper">
+        <div id="gameplay-tooltip" class="gameplay-tooltip" role="tooltip" aria-hidden="true">
+          <div class="gameplay-tooltip__header">
+            <span class="gameplay-tooltip__title" data-i18n="rulesTitle">📖 遊戲玩法說明</span>
+          </div>
+          <div class="gameplay-tooltip__body">
+            <div class="gameplay-tooltip__sec">
+              <h4 data-i18n="tooltipHowTitle">💋 如何接吻</h4>
+              <p data-i18n="tooltipHowDesc">按住畫面任意處或 KISS 按鈕開始親吻，持續按住可累積接吻次數。</p>
+            </div>
+            <div class="gameplay-tooltip__sec">
+              <h4 data-i18n="tooltipSpeedTitle">⚡ 連鎖加速</h4>
+              <p data-i18n="tooltipSpeedDesc">同一次按住越久速度越快（最高 20 倍）。達 10 倍速時觸發深情喘氣特效。放開則重置速度。</p>
+            </div>
+            <div class="gameplay-tooltip__sec">
+              <h4 data-i18n="tooltipBossTitle">👀 觀察老闆動作</h4>
+              <p data-i18n="tooltipBossIdle">專心工作：安全辦公，把握時間接吻！</p>
+              <p data-i18n="tooltipBossPrep">準備轉頭：老闆即將轉身，隨時準備放開！</p>
+              <p data-i18n="tooltipBossLook">回頭盯著：老闆正在盯著！絕對不能接吻，否則抓包！</p>
+            </div>
+            <div class="gameplay-tooltip__sec">
+              <h4 data-i18n="tooltipEndingTitle">🏆 結局判定</h4>
+              <p data-i18n="tooltipEndingBad">BAD END：接吻被抓包</p>
+              <p data-i18n="tooltipEndingNormal">NORMAL END：存活但未滿 300 分</p>
+              <p data-i18n="tooltipEndingGood">GOOD END：存活且達到 300 分以上</p>
+            </div>
+          </div>
         </div>
-        <div class="gameplay-tooltip__body">
-          <div class="gameplay-tooltip__sec">
-            <h4 data-i18n="tooltipHowTitle">💋 如何接吻</h4>
-            <p data-i18n="tooltipHowDesc">按住畫面任意處或 KISS 按鈕開始親吻，持續按住可累積接吻次數。</p>
-          </div>
-          <div class="gameplay-tooltip__sec">
-            <h4 data-i18n="tooltipSpeedTitle">⚡ 連鎖加速</h4>
-            <p data-i18n="tooltipSpeedDesc">同一次按住越久速度越快（最高 20 倍）。達 10 倍速時觸發深情喘氣特效。放開則重置速度。</p>
-          </div>
-          <div class="gameplay-tooltip__sec">
-            <h4 data-i18n="tooltipBossTitle">👀 避開老闆目光</h4>
-            <p data-i18n="tooltipBossIdle">Boss Idle：安全工作，把握時間接吻！</p>
-            <p data-i18n="tooltipBossPrep">Boss Preparing：老闆準備回頭，隨時準備放開！</p>
-            <p data-i18n="tooltipBossLook">Boss Looking：老闆正在盯著！絕對不能親吻，否則當場抓包！</p>
-          </div>
-          <div class="gameplay-tooltip__sec">
-            <h4 data-i18n="tooltipEndingTitle">🏆 結局判定</h4>
-            <p data-i18n="tooltipEndingBad">BAD END：接吻被抓包</p>
-            <p data-i18n="tooltipEndingNormal">NORMAL END：存活但未滿 70 分</p>
-            <p data-i18n="tooltipEndingGood">GOOD END：存活且達到 70 分以上</p>
-          </div>
-        </div>
+        <button
+          id="gameplay-help-btn"
+          class="gameplay-help-btn"
+          type="button"
+          aria-label="查看遊戲玩法"
+          title="遊戲玩法說明"
+          data-i18n-title="rulesTitle"
+        >?</button>
       </div>
       <button
-        id="gameplay-help-btn"
-        class="gameplay-help-btn"
+        id="gameplay-exit-btn"
+        class="gameplay-exit-btn"
         type="button"
-        aria-label="查看遊戲玩法"
-        title="遊戲玩法說明"
-        data-i18n-title="rulesTitle"
-      >?</button>
+        aria-label="離開遊戲"
+        title="離開遊戲"
+        data-i18n-title="exitGameBtn"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+      </button>
     </div>
 
     <div id="ending-overlay" class="ending-overlay" hidden>
